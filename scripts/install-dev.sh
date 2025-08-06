@@ -244,25 +244,37 @@ else
   sudo='sudo -E'
 fi
 
-# Detect distribution
-KNOWN_DISTRO="(Debian|Ubuntu|RedHat|CentOS|openSUSE|Amazon|Arista|SUSE)"
-DISTRO=$(lsb_release -d 2>/dev/null | grep -Eo $KNOWN_DISTRO  || grep -Eo $KNOWN_DISTRO /etc/issue 2>/dev/null || uname -s)
+# Detect kernel/distribution
+KNOWN_DISTRO="(Debian|Ubuntu|RedHat|CentOS|Amazon|openSUSE|SUSE)"
 
-if [ $DISTRO = "Darwin" ]; then
+if [ "$(uname -s)" = "Darwin" ]; then
   DISTRO="Darwin"
   STANDALONE_PYTHON_PLATFORM="apple-darwin"
-elif [ -f /etc/debian_version -o "$DISTRO" == "Debian" -o "$DISTRO" == "Ubuntu" ]; then
-  DISTRO="Debian"
-  STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
-elif [ -f /etc/redhat-release -o "$DISTRO" == "RedHat" -o "$DISTRO" == "CentOS" -o "$DISTRO" == "Amazon" ]; then
-  DISTRO="RedHat"
-  STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
-elif [ -f /etc/system-release -o "$DISTRO" == "Amazon" ]; then
-  DISTRO="RedHat"
-  STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
-elif [ -f /usr/lib/os-release -o "$DISTRO" == "SUSE" ]; then
-  DISTRO="SUSE"
-  STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
+elif [ -f /etc/os-release ]; then
+  . /etc/os-release
+  case "$ID" in 
+    debian)
+      DISTRO="Debian"
+      STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
+      ;;
+    ubuntu)
+      DISTRO="Ubuntu"
+      STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
+      ;;
+    rhel|centos|amzn)
+      DISTRO="RedHat"
+      STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
+      ;;
+    opensuse-leap|opensuse-tumbleweed|sles)
+      DISTRO="SUSE"
+      STANDALONE_PYTHON_PLATFORM="unknown-linux-gnu"
+      ;;
+    *)
+      show_error "Sorry, your host OS distribution ($ID) is not supported by this script."
+      show_info "Please send us a pull request or file an issue to support your environment!"
+      exit 1
+      ;;
+  esac
 else
   show_error "Sorry, your host OS distribution is not supported by this script."
   show_info "Please send us a pull request or file an issue to support your environment!"
