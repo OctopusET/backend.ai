@@ -9,7 +9,7 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from ai.backend.manager.data.permission.association_scopes_entites import (
+from ai.backend.manager.data.permission.association_scopes_entities import (
     AssociationScopesEntitiesData,
 )
 from ai.backend.manager.data.permission.id import ObjectId, ScopeId
