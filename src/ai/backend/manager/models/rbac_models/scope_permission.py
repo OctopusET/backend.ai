@@ -58,16 +58,16 @@ class ScopePermissionRow(Base):
     role_id: uuid.UUID = sa.Column("role_id", GUID, nullable=False)
     entity_type: EntityType = sa.Column(
         "entity_type", StrEnumType(EntityType, length=32), nullable=False
-    )  # e.g., "session", "vfolder", "image" etc.
+    )
     operation: OperationType = sa.Column(
         "operation", StrEnumType(OperationType, length=32), nullable=False
-    )  # e.g., "create", "read", "delete", "grant:create", "grant:read" etc.
+    )
     scope_type: ScopeType = sa.Column(
         "scope_type", StrEnumType(ScopeType, length=32), nullable=False
-    )  # e.g., "global", "domain", "project", "user" etc.
+    )
     scope_id: str = sa.Column(
         "scope_id", sa.String(64), nullable=False
-    )  # e.g., "global", "domain_id", "project_id", "user_id" etc.
+    )  # e.g., "domain_id", "project_id", "user_id" etc.
     created_at: datetime = sa.Column(
         "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )

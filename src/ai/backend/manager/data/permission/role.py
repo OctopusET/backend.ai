@@ -17,6 +17,7 @@ class RoleCreateInput:
     description: Optional[str] = None
 
     scope_permissions: list[ScopePermissionData] = field(default_factory=list)
+    id: Optional[uuid.UUID] = None
 
 
 @dataclass
