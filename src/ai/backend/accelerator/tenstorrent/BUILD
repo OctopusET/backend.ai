@@ -21,6 +21,7 @@ python_distribution(
     entry_points={
         "backendai_accelerator_v21": {
             "tt-n300": "ai.backend.accelerator.tenstorrent.n300.plugin:TTn300Plugin",
+            "tt-p100a": "ai.backend.accelerator.tenstorrent.p100a.plugin:TTP100APlugin",
         }
     },
     generate_setup=True,
