@@ -18,23 +18,30 @@ from ai.backend.common.types import (
     SlotTypes,
 )
 
-from .types import TTP100ADevice
+from .types import TTBlackholeDevice
 
-# TODO: confirm actual board_type string from tt-smi on real P100A hardware
-VALID_CARD_TYPE = "p100a"
+VALID_CARD_TYPES: frozenset[str] = frozenset({
+    "p100a",
+    "p150a",
+    "p150b",
+    "p150c",
+    "p300a",
+    "p300b",
+    "p300c",
+})
 
 log = BraceStyleAdapter(logging.getLogger(__spec__.name))  # type: ignore
 
 
-class TTP100APlugin(AbstractTTPlugin[TTP100ADevice]):
-    key = DeviceName("tt-p100a")
+class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
+    key = DeviceName("tt-blackhole")
     slot_types: Sequence[tuple[SlotName, SlotTypes]] = (
-        (SlotName("tt-p100a.device"), SlotTypes("count")),
+        (SlotName("tt-blackhole.device"), SlotTypes("count")),
     )
-    exclusive_slot_types: set[str] = {"tt-p100a.device"}
+    exclusive_slot_types: set[str] = {"tt-blackhole.device"}
 
-    async def _list_devices(self) -> list[TTP100ADevice]:
-        devices: list[TTP100ADevice] = []
+    async def _list_devices(self) -> list[TTBlackholeDevice]:
+        devices: list[TTBlackholeDevice] = []
 
         tt_devices = detect_chips_with_callback(print_status=False)
         backend = TTSMIBackend(tt_devices, pretty_output=False)
@@ -44,7 +51,7 @@ class TTP100APlugin(AbstractTTPlugin[TTP100ADevice]):
 
         for device_idx, pci_chip in enumerate(tt_devices):
             device_info = backend.get_device_info(device_idx)
-            if device_info["board_type"] not in VALID_CARD_TYPE:
+            if device_info["board_type"] not in VALID_CARD_TYPES or device_info["bus_id"] == "N/A":
                 continue
             log.debug("Config: {}", device_info)
             pci_idx, bus, _dev_fn = device_info["bus_id"].split(":", maxsplit=3)
@@ -58,14 +65,13 @@ class TTP100APlugin(AbstractTTPlugin[TTP100ADevice]):
             if numa_node_idx < 0:
                 numa_node_idx = 0
 
-            # TODO: confirm memory reporting format from tt-smi on real P100A hardware
-            device = TTP100ADevice(
-                model_name="Tenstorrent p100a",
+            device = TTBlackholeDevice(
+                model_name=f"Tenstorrent {device_info['board_type']}",
                 serial=DeviceId(device_info["board_id"]),
                 device_id=DeviceId(str(device_idx)),
                 device_number=int(device_idx),
                 hw_location=device_info["bus_id"],
-                memory_size=int(BinarySize.from_str(device_info["dram_speed"])),
+                memory_size=int(BinarySize.from_str(device_info["dram_speed"])) * 2,
                 processing_units=0,
                 numa_node=numa_node_idx,
                 tt_pci_chip=pci_chip,
@@ -75,18 +81,16 @@ class TTP100APlugin(AbstractTTPlugin[TTP100ADevice]):
 
         return devices
 
-    async def _gather_device_telemetry(self, device: TTP100ADevice) -> Decimal:
-        # TODO: confirm telemetry structure on real P100A hardware
-        # P100A (Blackhole) is likely single-chip, unlike N300's dual-chip left/right
+    async def _gather_device_telemetry(self, device: TTBlackholeDevice) -> Decimal:
         stat = self._tt_backend.get_chip_telemetry(device.tt_device_idx)
         return Decimal(stat["power"].strip())
 
     def get_metadata(self) -> AcceleratorMetadata:
         return {
-            "slot_name": "tt-p100a.device",
-            "description": "Tenstorrent p100a",
-            "human_readable_name": "Tenstorrent p100a Device",
-            "display_unit": "p100a",
+            "slot_name": "tt-blackhole.device",
+            "description": "Tenstorrent Blackhole",
+            "human_readable_name": "Tenstorrent Blackhole Device",
+            "display_unit": "blackhole",
             "number_format": {"binary": False, "round_length": 0},
             "display_icon": "npu",
         }
