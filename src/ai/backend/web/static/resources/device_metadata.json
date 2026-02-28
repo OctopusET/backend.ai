@@ -155,6 +155,17 @@
       },
       "display_icon": "lpu"
     },
+    "tt-blackhole.device": {
+      "slot_name": "tt-blackhole.device",
+      "description": "Tenstorrent Blackhole",
+      "human_readable_name": "Tenstorrent Blackhole",
+      "display_unit": "Device",
+      "number_format": {
+        "binary": false,
+        "round_length": 0
+      },
+      "display_icon": "tenstorrent"
+    },
     "tt-n300.device": {
       "slot_name": "tt-n300.device",
       "description": "Tenstorrent Wormhole™ n300",

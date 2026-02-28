@@ -1,6 +1,7 @@
 import logging
 from abc import ABCMeta, abstractmethod
 from collections.abc import Mapping, MutableMapping, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from pprint import pformat
@@ -47,6 +48,15 @@ from ai.backend.common.types import (
     SlotTypes,
 )
 
+
+@dataclass
+class TTDeviceTelemetry:
+    power_watts: Decimal
+    temperature_celsius: Decimal
+    memory_used_bytes: int
+    memory_total_bytes: int
+
+
 log = BraceStyleAdapter(logging.getLogger(__spec__.name))  # type: ignore
 
 
@@ -88,8 +98,8 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
         raise NotImplementedError
 
     @abstractmethod
-    async def _gather_device_telemetry(self, device: TDevice) -> Decimal:
-        """Return aggregated power consumption in watts for a single device."""
+    async def _gather_device_telemetry(self, device: TDevice) -> TTDeviceTelemetry:
+        """Return telemetry for a single device."""
         raise NotImplementedError
 
     @abstractmethod
@@ -117,12 +127,26 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
         stat_prefix = self.key.replace("-", "_")
         power_total = Decimal("0")
         power_stats: dict[DeviceId, Measurement] = {}
+        temp_max = Decimal("0")
+        temp_stats: dict[DeviceId, Measurement] = {}
+        mem_used_total = 0
+        mem_total_total = 0
+        mem_stats: dict[DeviceId, Measurement] = {}
 
         if self.enabled:
             for device in await self.list_devices():
-                dev_power = await self._gather_device_telemetry(device)
-                power_total += dev_power
-                power_stats[device.device_id] = Measurement(dev_power)
+                telemetry = await self._gather_device_telemetry(device)
+                power_total += telemetry.power_watts
+                power_stats[device.device_id] = Measurement(telemetry.power_watts)
+                if telemetry.temperature_celsius > temp_max:
+                    temp_max = telemetry.temperature_celsius
+                temp_stats[device.device_id] = Measurement(telemetry.temperature_celsius)
+                mem_used_total += telemetry.memory_used_bytes
+                mem_total_total += telemetry.memory_total_bytes
+                mem_stats[device.device_id] = Measurement(
+                    Decimal(telemetry.memory_used_bytes),
+                    Decimal(telemetry.memory_total_bytes),
+                )
 
         return [
             NodeMeasurement(
@@ -132,6 +156,22 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
                 stats_filter=frozenset({"max"}),
                 per_node=Measurement(Decimal(power_total)),
                 per_device=power_stats,
+            ),
+            NodeMeasurement(
+                MetricKey(f"{stat_prefix}_temperature"),
+                MetricTypes.GAUGE,
+                unit_hint="celsius",
+                stats_filter=frozenset({"max"}),
+                per_node=Measurement(Decimal(temp_max)),
+                per_device=temp_stats,
+            ),
+            NodeMeasurement(
+                MetricKey(f"{stat_prefix}_mem"),
+                MetricTypes.GAUGE,
+                unit_hint="bytes",
+                stats_filter=frozenset({"max"}),
+                per_node=Measurement(Decimal(mem_used_total), Decimal(mem_total_total)),
+                per_device=mem_stats,
             ),
         ]
 
@@ -144,18 +184,18 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
         stat_prefix = self.key.replace("-", "_")
 
         if self.enabled:
-            device_power_by_path: dict[str, Decimal] = {}
+            device_telemetry_by_path: dict[str, TTDeviceTelemetry] = {}
             for device in await self.list_devices():
                 path = f"/dev/tenstorrent/{device.device_number}"
-                device_power_by_path[path] = await self._gather_device_telemetry(device)
+                device_telemetry_by_path[path] = await self._gather_device_telemetry(device)
 
             for cid in container_ids:
                 power_stats[cid] = Decimal("0")
                 async with Docker() as docker:
                     container_info = await docker.containers.get(cid)
                 for dev in container_info["HostConfig"]["Devices"]:
-                    if dev["PathOnHost"] in device_power_by_path:
-                        power_stats[cid] += device_power_by_path[dev["PathOnHost"]]
+                    if dev["PathOnHost"] in device_telemetry_by_path:
+                        power_stats[cid] += device_telemetry_by_path[dev["PathOnHost"]].power_watts
 
         return [
             ContainerMeasurement(

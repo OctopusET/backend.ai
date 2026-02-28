@@ -6,7 +6,7 @@ from pathlib import Path
 from tt_smi.tt_smi_backend import TTSMIBackend
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
 
-from ai.backend.accelerator.tenstorrent.common.plugin import AbstractTTPlugin
+from ai.backend.accelerator.tenstorrent.common.plugin import AbstractTTPlugin, TTDeviceTelemetry
 from ai.backend.accelerator.tenstorrent.utils import resolve_pci_sysfs_path
 from ai.backend.common.logging import BraceStyleAdapter
 from ai.backend.common.types import (
@@ -40,8 +40,11 @@ class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
     )
     exclusive_slot_types: set[str] = {"tt-blackhole.device"}
 
+    _hwmon_paths: dict[DeviceId, Path]
+
     async def _list_devices(self) -> list[TTBlackholeDevice]:
         devices: list[TTBlackholeDevice] = []
+        self._hwmon_paths = {}
 
         tt_devices = detect_chips_with_callback(print_status=False)
         backend = TTSMIBackend(tt_devices, pretty_output=False)
@@ -54,8 +57,16 @@ class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
             if device_info["board_type"] not in VALID_CARD_TYPES or device_info["bus_id"] == "N/A":
                 continue
             log.debug("Config: {}", device_info)
-            pci_idx, bus, _dev_fn = device_info["bus_id"].split(":", maxsplit=3)
 
+            bus_id = device_info["bus_id"]
+            pci_sysfs = Path(f"/sys/bus/pci/devices/{bus_id}")
+            hwmon_dir = pci_sysfs / "hwmon"
+            if hwmon_dir.is_dir():
+                hwmon_entries = list(hwmon_dir.iterdir())
+                if hwmon_entries:
+                    self._hwmon_paths[DeviceId(str(device_idx))] = hwmon_entries[0]
+
+            pci_idx, bus, _dev_fn = bus_id.split(":", maxsplit=3)
             pci_base_path = resolve_pci_sysfs_path(f"{pci_idx}:{bus}")
             if not pci_base_path:
                 raise RuntimeError("PCI device file not found in the sysfs!")
@@ -70,7 +81,7 @@ class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
                 serial=DeviceId(device_info["board_id"]),
                 device_id=DeviceId(str(device_idx)),
                 device_number=int(device_idx),
-                hw_location=device_info["bus_id"],
+                hw_location=bus_id,
                 memory_size=int(BinarySize.from_str(device_info["dram_speed"])) * 2,
                 processing_units=0,
                 numa_node=numa_node_idx,
@@ -81,9 +92,34 @@ class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
 
         return devices
 
-    async def _gather_device_telemetry(self, device: TTBlackholeDevice) -> Decimal:
-        stat = self._tt_backend.get_chip_telemetry(device.tt_device_idx)
-        return Decimal(stat["power"].strip())
+    def _read_hwmon(self, device_id: DeviceId, sensor: str) -> int | None:
+        hwmon_path = self._hwmon_paths.get(device_id)
+        if hwmon_path is None:
+            return None
+        try:
+            return int((hwmon_path / sensor).read_text().strip())
+        except (FileNotFoundError, ValueError):
+            return None
+
+    async def _gather_device_telemetry(self, device: TTBlackholeDevice) -> TTDeviceTelemetry:
+        # Power: hwmon reports microwatts, convert to watts
+        power_uw = self._read_hwmon(device.device_id, "power1_input")
+        if power_uw is not None:
+            power_w = Decimal(power_uw) / Decimal(1_000_000)
+        else:
+            stat = self._tt_backend.get_chip_telemetry(device.tt_device_idx)
+            power_w = Decimal(stat["power"].strip())
+
+        # Temperature: hwmon reports millidegrees
+        temp_m = self._read_hwmon(device.device_id, "temp1_input")
+        temp_c = Decimal(temp_m) / Decimal(1000) if temp_m is not None else Decimal(0)
+
+        return TTDeviceTelemetry(
+            power_watts=power_w,
+            temperature_celsius=temp_c,
+            memory_used_bytes=0,  # TODO: read from fdinfo when KMD supports it
+            memory_total_bytes=device.memory_size,
+        )
 
     def get_metadata(self) -> AcceleratorMetadata:
         return {

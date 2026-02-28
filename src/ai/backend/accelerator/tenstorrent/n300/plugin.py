@@ -6,7 +6,7 @@ from pathlib import Path
 from tt_smi.tt_smi_backend import TTSMIBackend
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
 
-from ai.backend.accelerator.tenstorrent.common.plugin import AbstractTTPlugin
+from ai.backend.accelerator.tenstorrent.common.plugin import AbstractTTPlugin, TTDeviceTelemetry
 from ai.backend.accelerator.tenstorrent.utils import resolve_pci_sysfs_path
 from ai.backend.common.logging import BraceStyleAdapter
 from ai.backend.common.types import (
@@ -73,10 +73,18 @@ class TTn300Plugin(AbstractTTPlugin[TTn300Device]):
 
         return devices
 
-    async def _gather_device_telemetry(self, device: TTn300Device) -> Decimal:
+    async def _gather_device_telemetry(self, device: TTn300Device) -> TTDeviceTelemetry:
         left_stat = self._tt_backend.get_chip_telemetry(device.tt_device_idx)
         right_stat = self._tt_backend.get_chip_telemetry(device.tt_device_idx + 1)
-        return Decimal(left_stat["power"].strip()) + Decimal(right_stat["power"].strip())
+        power = Decimal(left_stat["power"].strip()) + Decimal(right_stat["power"].strip())
+        temp_left = Decimal(left_stat.get("asic_temperature", "0").strip())
+        temp_right = Decimal(right_stat.get("asic_temperature", "0").strip())
+        return TTDeviceTelemetry(
+            power_watts=power,
+            temperature_celsius=max(temp_left, temp_right),
+            memory_used_bytes=0,
+            memory_total_bytes=device.memory_size,
+        )
 
     def get_metadata(self) -> AcceleratorMetadata:
         return {
