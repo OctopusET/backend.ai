@@ -60,6 +60,82 @@ services:
       timeout: 3s
       retries: 10
 
+  # -- one-shot init (DB schema + fixtures + etcd seed) --
+
+  init:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
+      - ./configs/manager/alembic.ini:/app/alembic.ini:ro
+    environment:
+      - ALEMBIC_INI=/app/alembic.ini
+      - MANAGER_CONF=/app/manager.toml
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+    entrypoint: ["/bin/bash", "/app/scripts/init-manager.sh"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["init"]
+
+  # -- manager --
+
+  manager:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["python", "-m", "ai.backend.cli", "mgr", "-f", "/app/manager.toml", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["manager"]
+
+  # -- webserver (web UI) --
+
+  webserver:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/webserver/halfstack-docker.conf:/app/webserver.conf:ro
+    command: ["python", "-m", "ai.backend.cli", "web", "-f", "/app/webserver.conf", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["webserver"]
+
+  # -- GraphQL federation gateway (Hive Gateway) --
+
+  graphql-gateway:
+    image: ghcr.io/graphql-hive/gateway:2.1.12
+    network_mode: host
+    command: ["supergraph"]
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4000
+    volumes:
+      - ./configs/graphql/supergraph.graphql:/gateway/supergraph.graphql:ro
+      - ./configs/graphql/gateway-docker.config.ts:/gateway/gateway.config.ts:ro
+    profiles: ["gateway"]
+
   # -- quick hw detection test (no pants needed) --
 
   tt-detect:
@@ -87,7 +163,8 @@ services:
       - /dev/tenstorrent:/dev/tenstorrent
       - /dev/hugepages-1G:/dev/hugepages-1G
       - /sys:/sys:ro
-      - ./configs/agent/halfstack.toml:/app/agent.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./configs/agent/halfstack-docker.toml:/app/agent.toml:ro
     ipc: host
     depends_on:
       halfstack-db:

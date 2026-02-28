@@ -1,0 +1,73 @@
+[etcd]
+namespace = "local"
+addr = { host = "127.0.0.1", port = 8120 }
+user = ""
+password = ""
+
+
+[agent]
+mode = "docker"
+rpc-listen-addr = { host = "127.0.0.1", port = 6001 }
+service-addr = { host = "0.0.0.0", port = 6003 }
+ssl-enabled = false
+agent-sock-port = 6007
+scaling-group = "default"
+pid-file = "./agent.pid"
+event-loop = "uvloop"
+var-base-path = "./var/lib/backend.ai"
+image-commit-path = "./tmp/backend.ai/commit/"
+mount-path = "./vfroot/local"
+cohabiting-storage-proxy = true
+skip-manager-detection = true
+metadata-server-port = 40228
+allow-compute-plugins = ["ai.backend.accelerator.tenstorrent.blackhole", "ai.backend.accelerator.mock"]
+
+
+[container]
+port-range = [30000, 31000]
+kernel-uid = -1
+kernel-gid = -1
+bind-host = "127.0.0.1"
+sandbox-type = "docker"
+scratch-type = "hostdir"
+scratch-root = "./scratches"
+scratch-size = "1G"
+
+
+[watcher]
+service-addr = { host = "127.0.0.1", port = 6009 }
+ssl-enabled = false
+target-service = "backendai-agent.service"
+soft-reset-available = false
+
+
+[logging]
+level = "DEBUG"
+drivers = ["console"]
+
+[logging.pkg-ns]
+"" = "WARNING"
+"aiodocker" = "INFO"
+"aiotools" = "INFO"
+"aiohttp" = "INFO"
+"ai.backend" = "DEBUG"
+
+[logging.console]
+colored = true
+format = "verbose"
+
+
+[resource]
+reserved-cpu = 1
+reserved-mem = "1G"
+reserved-disk = "8G"
+allocation-order = ["cuda", "rocm", "tpu", "cpu", "mem"]
+affinity-policy = "INTERLEAVED"
+
+
+[debug]
+enabled = true
+skip-container-deletion = false
+
+[otel]
+enabled = false
