@@ -375,9 +375,48 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
     ) -> list[str]:
         return []
 
+    def _read_procfs_pids(self, device_number: int) -> set[int]:
+        """Read PIDs from /proc/driver/tenstorrent/N/pids (stock tt-kmd)."""
+        try:
+            text = Path(f"/proc/driver/tenstorrent/{device_number}/pids").read_text()
+            return {int(line) for line in text.splitlines() if line.strip()}
+        except (FileNotFoundError, ValueError):
+            return set()
+
     async def gather_process_measures(
         self,
         ctx: StatContext,
         pid_map: Mapping[int, str],
     ) -> Sequence[ProcessMeasurement]:
-        return []
+        if not self.enabled:
+            return []
+
+        stat_prefix = self.key.replace("-", "_")
+        per_process_power: dict[int, Measurement] = {}
+
+        for device in await self.list_devices():
+            pids = self._read_procfs_pids(device.device_number)
+            matched_pids = pids & pid_map.keys()
+            if not matched_pids:
+                continue
+            telemetry = await self._gather_device_telemetry(device)
+            for pid in matched_pids:
+                if pid in per_process_power:
+                    per_process_power[pid] = Measurement(
+                        per_process_power[pid].value + telemetry.power_watts,
+                    )
+                else:
+                    per_process_power[pid] = Measurement(telemetry.power_watts)
+
+        if not per_process_power:
+            return []
+
+        return [
+            ProcessMeasurement(
+                MetricKey(f"{stat_prefix}_power"),
+                MetricTypes.USAGE,
+                unit_hint="watts",
+                stats_filter=frozenset({"max"}),
+                per_process=per_process_power,
+            ),
+        ]

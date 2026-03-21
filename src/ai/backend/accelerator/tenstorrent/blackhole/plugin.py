@@ -117,7 +117,7 @@ class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
         return TTDeviceTelemetry(
             power_watts=power_w,
             temperature_celsius=temp_c,
-            memory_used_bytes=0,  # TODO: read from fdinfo when KMD supports it
+            memory_used_bytes=0,
             memory_total_bytes=device.memory_size,
         )
 
