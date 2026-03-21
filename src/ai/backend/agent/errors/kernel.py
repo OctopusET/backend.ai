@@ -97,3 +97,17 @@ class RunIdNotSetError(BackendAIError, web.HTTPInternalServerError):
             operation=ErrorOperation.EXECUTE,
             error_detail=ErrorDetail.NOT_READY,
         )
+
+
+class ScratchSetupError(BackendAIError, web.HTTPInternalServerError):
+    """Raised when scratch filesystem setup fails (sparse file, mkfs, or mount)."""
+
+    error_type = "https://api.backend.ai/probs/agent/scratch-setup-error"
+    error_title = "Scratch filesystem setup failed."
+
+    def error_code(self) -> ErrorCode:
+        return ErrorCode(
+            domain=ErrorDomain.KERNEL,
+            operation=ErrorOperation.SETUP,
+            error_detail=ErrorDetail.INTERNAL_ERROR,
+        )

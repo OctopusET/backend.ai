@@ -11,6 +11,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import override
 
+from ai.backend.agent.errors.kernel import ScratchSetupError
 from ai.backend.common.docker import KernelFeatures
 from ai.backend.common.stage.types import (
     ArgsSpecGenerator,
@@ -129,12 +130,14 @@ class ScratchProvisioner(Provisioner[ScratchSpec, ScratchResult]):
 
     def _create_sparse_file(self, name: str, size: int) -> None:
         filepath = Path(name)
-        filepath.touch(mode=0o644, exist_ok=True)
+        if filepath.exists():
+            filepath.unlink()
+        filepath.touch(mode=0o644)
         os.truncate(name, size)
         # Check that no space was allocated
         stat = filepath.stat()
         if stat.st_blocks != 0:
-            raise RuntimeError("could not create sparse file")
+            raise ScratchSetupError("could not create sparse file")
 
     async def _create_loop_filesystem(
         self, scratch_root: Path, scratch_size: int, kernel_id: KernelId
@@ -145,20 +148,31 @@ class ScratchProvisioner(Provisioner[ScratchSpec, ScratchResult]):
         await loop.run_in_executor(
             None, functools.partial(os.makedirs, str(scratch_dir), exist_ok=True)
         )
-        await loop.run_in_executor(None, self._create_sparse_file, str(scratch_file), scratch_size)
-        mkfs = await asyncio.create_subprocess_exec(
-            "/sbin/mkfs.ext4",
-            str(scratch_file),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        exit_code = await mkfs.wait()
-        if exit_code != 0:
-            raise RuntimeError("mkfs failed")
-        mount = await asyncio.create_subprocess_exec("mount", str(scratch_file), str(scratch_dir))
-        exit_code = await mount.wait()
-        if exit_code != 0:
-            raise RuntimeError("mount failed")
+        try:
+            await loop.run_in_executor(
+                None, self._create_sparse_file, str(scratch_file), scratch_size
+            )
+            mkfs = await asyncio.create_subprocess_exec(
+                "/sbin/mkfs.ext4",
+                str(scratch_file),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            exit_code = await mkfs.wait()
+            if exit_code != 0:
+                raise ScratchSetupError("mkfs.ext4 failed")
+            mount = await asyncio.create_subprocess_exec(
+                "mount", str(scratch_file), str(scratch_dir)
+            )
+            exit_code = await mount.wait()
+            if exit_code != 0:
+                raise ScratchSetupError("mount failed")
+        except Exception:
+            if scratch_file.exists():
+                scratch_file.unlink()
+            if scratch_dir.exists():
+                shutil.rmtree(scratch_dir, ignore_errors=True)
+            raise
 
     async def _create_scratch_dirs(self, spec: ScratchSpec) -> None:
         work_dir = ScratchUtil.work_dir(spec.scratch_root, spec.kernel_id)
@@ -295,7 +309,7 @@ class ScratchProvisioner(Provisioner[ScratchSpec, ScratchResult]):
         umount = await asyncio.create_subprocess_exec("umount", str(scratch_dir))
         exit_code = await umount.wait()
         if exit_code != 0:
-            raise RuntimeError("umount failed")
+            raise ScratchSetupError("umount failed")
         await loop.run_in_executor(None, scratch_file.unlink)
         await loop.run_in_executor(None, shutil.rmtree, str(scratch_dir))
 
