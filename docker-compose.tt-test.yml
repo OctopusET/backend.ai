@@ -1,0 +1,219 @@
+services:
+
+  # -- infrastructure --
+
+  halfstack-db:
+    image: postgres:16.3-alpine
+    restart: unless-stopped
+    ports:
+      - "8100:5432"
+    environment:
+      - POSTGRES_DB=backend
+      - POSTGRES_PASSWORD=develove
+    volumes:
+      - half-db:/var/lib/postgresql/data:rw
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  halfstack-redis:
+    image: redis:7.2.11-alpine
+    restart: unless-stopped
+    ports:
+      - "8110:6379"
+    volumes:
+      - half-redis:/data:rw
+    command: >
+      redis-server
+      --appendonly yes
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  halfstack-etcd:
+    image: quay.io/coreos/etcd:v3.5.14
+    restart: unless-stopped
+    volumes:
+      - half-etcd:/etcd-data:rw
+    ports:
+      - "8120:2379"
+    command: >
+      /usr/local/bin/etcd
+      --name backendai-etcd
+      --data-dir /etcd-data
+      --listen-client-urls http://0.0.0.0:2379
+      --advertise-client-urls http://0.0.0.0:2379
+      --listen-peer-urls http://0.0.0.0:2380
+      --initial-advertise-peer-urls http://0.0.0.0:2380
+      --initial-cluster backendai-etcd=http://0.0.0.0:2380
+      --initial-cluster-token backendai-etcd-token
+      --initial-cluster-state new
+      --enable-v2=true
+      --auto-compaction-retention 1
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # -- one-shot init (DB schema + fixtures + etcd seed) --
+
+  init:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
+      - ./configs/manager/alembic.ini:/app/alembic.ini:ro
+    environment:
+      - ALEMBIC_INI=/app/alembic.ini
+      - MANAGER_CONF=/app/manager.toml
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@lablup.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-wJalrXUt}
+    entrypoint: ["/bin/bash", "/app/scripts/init-manager.sh"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["init"]
+
+  # -- manager --
+
+  manager:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["python", "-m", "ai.backend.cli", "mgr", "-f", "/app/manager.toml", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["manager"]
+
+  # -- webserver (web UI) --
+
+  webserver:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/webserver/halfstack-docker.conf:/app/webserver.conf:ro
+    command: ["python", "-m", "ai.backend.cli", "web", "-f", "/app/webserver.conf", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["webserver"]
+
+  # -- GraphQL federation gateway (Hive Gateway) --
+
+  graphql-gateway:
+    image: ghcr.io/graphql-hive/gateway:2.1.12
+    network_mode: host
+    command: ["supergraph"]
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4000
+    volumes:
+      - ./configs/graphql/supergraph.graphql:/gateway/supergraph.graphql:ro
+      - ./configs/graphql/gateway-docker.config.ts:/gateway/gateway.config.ts:ro
+    profiles: ["gateway"]
+
+  # -- AppProxy coordinator --
+
+  appproxy-coordinator:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/appproxy/coordinator.toml:/app/app-proxy-coordinator.toml:ro
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-coordinator", "-f", "/app/app-proxy-coordinator.toml", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+    profiles: ["appproxy"]
+
+  # -- AppProxy worker --
+
+  appproxy-worker:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/appproxy/worker.toml:/app/app-proxy-worker.toml:ro
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-worker", "-f", "/app/app-proxy-worker.toml", "start-server", "--debug"]
+    depends_on:
+      halfstack-redis:
+        condition: service_healthy
+    profiles: ["appproxy"]
+
+  # -- quick hw detection test (no pants needed) --
+
+  tt-detect:
+    build:
+      context: .
+      dockerfile: docker/tt-detect.Dockerfile
+    privileged: true
+    network_mode: host
+    volumes:
+      - /dev/tenstorrent:/dev/tenstorrent
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - /sys:/sys:ro
+    ipc: host
+    profiles: ["detect"]
+
+  # -- full agent (pip-based, no pants needed) --
+
+  agent:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    privileged: true
+    user: root
+    network_mode: host
+    volumes:
+      - /dev/tenstorrent:/dev/tenstorrent
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - /sys:/sys:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./configs/agent/halfstack-docker.toml:/app/agent.toml:ro
+      - /home/moon/backend.ai/scratches:/home/moon/backend.ai/scratches
+      - /tmp/backend.ai:/tmp/backend.ai
+    ipc: host
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["agent"]
+
+volumes:
+  half-db:
+  half-redis:
+  half-etcd:
