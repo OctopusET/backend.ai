@@ -1,0 +1,255 @@
+## Backend.AI - One-command deployment with Tenstorrent support
+## Usage:
+##   make setup   # one-time: create /opt/backendai
+##   make up      # start everything
+##   make down    # stop everything
+##
+## All paths use /opt/backendai so agent and compute containers see the same filesystem.
+
+services:
+
+  # --- Infrastructure ---
+
+  halfstack-db:
+    image: postgres:16.3-alpine
+    restart: unless-stopped
+    ports:
+      - "8100:5432"
+    environment:
+      - POSTGRES_DB=backend
+      - POSTGRES_PASSWORD=develove
+    volumes:
+      - half-db:/var/lib/postgresql/data:rw
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  halfstack-redis:
+    image: redis:7.2.11-alpine
+    restart: unless-stopped
+    ports:
+      - "8110:6379"
+    volumes:
+      - half-redis:/data:rw
+    command: >
+      redis-server
+      --appendonly yes
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  halfstack-etcd:
+    image: quay.io/coreos/etcd:v3.5.14
+    restart: unless-stopped
+    volumes:
+      - half-etcd:/etcd-data:rw
+    ports:
+      - "8120:2379"
+    command: >
+      /usr/local/bin/etcd
+      --name backendai-etcd
+      --data-dir /etcd-data
+      --listen-client-urls http://0.0.0.0:2379
+      --advertise-client-urls http://0.0.0.0:2379
+      --listen-peer-urls http://0.0.0.0:2380
+      --initial-advertise-peer-urls http://0.0.0.0:2380
+      --initial-cluster backendai-etcd=http://0.0.0.0:2380
+      --initial-cluster-token backendai-etcd-token
+      --initial-cluster-state new
+      --enable-v2=true
+      --auto-compaction-retention 1
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- One-shot init (DB schema + fixtures + etcd + images) ---
+
+  init:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
+      - ./configs/manager/alembic.ini:/app/alembic.ini:ro
+    environment:
+      - ALEMBIC_INI=/app/alembic.ini
+      - MANAGER_CONF=/app/manager.toml
+    entrypoint: ["/bin/bash", "/app/scripts/init-manager.sh"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["init"]
+
+  # --- AppProxy DB init ---
+
+  init-appproxy:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/appproxy/coordinator.toml:/app/app-proxy-coordinator.toml:ro
+      - ./src/ai/backend/install/configs/alembic-appproxy.ini:/app/alembic-appproxy.ini:ro
+    entrypoint: ["python", "-m", "ai.backend.cli", "app-proxy-coordinator", "-f", "/app/app-proxy-coordinator.toml", "schema", "oneshot", "-f", "/app/alembic-appproxy.ini"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+    profiles: ["init"]
+
+  # --- Manager ---
+
+  manager:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["python", "-m", "ai.backend.cli", "mgr", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["services"]
+
+  # --- Web UI server ---
+
+  webserver:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs/webserver/halfstack-docker.conf:/app/webserver.conf:ro
+    command: ["python", "-m", "ai.backend.cli", "web", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["services"]
+
+  # --- GraphQL federation gateway ---
+
+  graphql-gateway:
+    image: ghcr.io/graphql-hive/gateway:2.1.12
+    network_mode: host
+    command: ["supergraph"]
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4000
+    volumes:
+      - ./configs/graphql/supergraph.graphql:/gateway/supergraph.graphql:ro
+      - ./configs/graphql/gateway-docker.config.ts:/gateway/gateway.config.ts:ro
+    profiles: ["services"]
+
+  # --- Storage Proxy ---
+
+  storage-proxy:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/storage-proxy/storage-proxy.toml:/app/storage-proxy.toml:ro
+      - /opt/backendai/vfolders:/opt/backendai/vfolders
+    command: ["python", "-m", "ai.backend.cli", "storage", "start-server", "--debug"]
+    depends_on:
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["services"]
+
+  # --- AppProxy Coordinator ---
+
+  appproxy-coordinator:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/appproxy/coordinator.toml:/app/app-proxy-coordinator.toml:ro
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-coordinator", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+    profiles: ["services"]
+
+  # --- AppProxy Worker ---
+
+  appproxy-worker:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/appproxy/worker.toml:/app/app-proxy-worker.toml:ro
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-worker", "start-server", "--debug"]
+    depends_on:
+      halfstack-redis:
+        condition: service_healthy
+    profiles: ["services"]
+
+  # --- Agent (Tenstorrent) ---
+
+  agent:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    privileged: true
+    user: root
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev/tenstorrent:/dev/tenstorrent
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - /sys:/sys:ro
+      - /opt/backendai:/opt/backendai
+      - ./configs/agent/halfstack-docker.toml:/app/agent.toml:ro
+    ipc: host
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+      halfstack-etcd:
+        condition: service_healthy
+    profiles: ["services"]
+
+  # --- Krunner extractor (one-shot, extracts krunner binaries to /opt/backendai) ---
+
+  krunner-setup:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    volumes:
+      - /opt/backendai:/opt/backendai
+    entrypoint: ["/bin/bash", "-c", "cp -a /app/src/ai/backend/runner/* /opt/backendai/runner/ 2>/dev/null; echo 'krunner extracted'"]
+    profiles: ["init"]
+
+volumes:
+  half-db:
+  half-redis:
+  half-etcd:

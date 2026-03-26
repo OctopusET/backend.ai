@@ -1,0 +1,54 @@
+[etcd]
+namespace = "local"
+addr = { host = "127.0.0.1", port = 8120 }
+user = ""
+password = ""
+
+[storage-proxy]
+node-id = "i-storage-proxy-local"
+num-proc = 1
+event-loop = "uvloop"
+scandir-limit = 1000
+max-upload-size = "100g"
+secret = "some-secret-private-for-storage-proxy"
+session-expire = "1d"
+use-watcher = false
+
+[api.client]
+service-addr = { host = "0.0.0.0", port = 6021 }
+ssl-enabled = false
+
+[api.manager]
+service-addr = { host = "0.0.0.0", port = 6022 }
+internal-addr = { host = "0.0.0.0", port = 16023 }
+ssl-enabled = true
+ssl-cert = "/app/configs/storage-proxy/ssl/manager-api.cert.pem"
+ssl-privkey = "/app/configs/storage-proxy/ssl/manager-api.key.pem"
+secret = "some-secret-shared-with-manager"
+
+[debug]
+enabled = false
+
+[logging]
+level = "INFO"
+drivers = ["console"]
+
+[logging.pkg-ns]
+"" = "WARNING"
+"aiotools" = "INFO"
+"aiohttp" = "INFO"
+"ai.backend" = "INFO"
+
+[logging.console]
+colored = true
+format = "verbose"
+
+[volume.volume1]
+backend = "vfs"
+path = "/opt/backendai/vfolders/volume1"
+
+[pyroscope]
+enabled = false
+
+[otel]
+enabled = false

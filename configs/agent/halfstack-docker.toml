@@ -12,11 +12,11 @@ service-addr = { host = "0.0.0.0", port = 6003 }
 ssl-enabled = false
 agent-sock-port = 6007
 scaling-group = "default"
-pid-file = "./agent.pid"
+pid-file = "/opt/backendai/var/agent.pid"
 event-loop = "uvloop"
-var-base-path = "/home/moon/backend.ai/var/lib/backend.ai"
-image-commit-path = "/home/moon/backend.ai/tmp/backend.ai/commit/"
-mount-path = "/home/moon/backend.ai/vfroot/local"
+var-base-path = "/opt/backendai/var"
+image-commit-path = "/opt/backendai/var/commit"
+mount-path = "/opt/backendai/vfolders"
 cohabiting-storage-proxy = true
 skip-manager-detection = true
 metadata-server-port = 40228
@@ -30,7 +30,7 @@ kernel-gid = -1
 bind-host = "0.0.0.0"
 sandbox-type = "docker"
 scratch-type = "hostdir"
-scratch-root = "/home/moon/backend.ai/scratches"
+scratch-root = "/opt/backendai/scratches"
 scratch-size = "1G"
 
 
@@ -67,7 +67,7 @@ affinity-policy = "INTERLEAVED"
 
 [debug]
 enabled = true
-skip-container-deletion = true
+skip-container-deletion = false
 
 [otel]
 enabled = false
