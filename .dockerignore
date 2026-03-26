@@ -3,3 +3,4 @@ volumes
 tools
 tmp
 .tmp
+scratches/

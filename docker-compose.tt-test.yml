@@ -73,8 +73,8 @@ services:
     environment:
       - ALEMBIC_INI=/app/alembic.ini
       - MANAGER_CONF=/app/manager.toml
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@lablup.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-wJalrXUt}
     entrypoint: ["/bin/bash", "/app/scripts/init-manager.sh"]
     depends_on:
       halfstack-db:
@@ -89,6 +89,7 @@ services:
     build:
       context: .
       dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
     network_mode: host
     volumes:
       - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
@@ -136,6 +137,40 @@ services:
       - ./configs/graphql/gateway-docker.config.ts:/gateway/gateway.config.ts:ro
     profiles: ["gateway"]
 
+  # -- AppProxy coordinator --
+
+  appproxy-coordinator:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/appproxy/coordinator.toml:/app/app-proxy-coordinator.toml:ro
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-coordinator", "-f", "/app/app-proxy-coordinator.toml", "start-server", "--debug"]
+    depends_on:
+      halfstack-db:
+        condition: service_healthy
+      halfstack-redis:
+        condition: service_healthy
+    profiles: ["appproxy"]
+
+  # -- AppProxy worker --
+
+  appproxy-worker:
+    build:
+      context: .
+      dockerfile: docker/backend.ai-dev.Dockerfile
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/appproxy/worker.toml:/app/app-proxy-worker.toml:ro
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-worker", "-f", "/app/app-proxy-worker.toml", "start-server", "--debug"]
+    depends_on:
+      halfstack-redis:
+        condition: service_healthy
+    profiles: ["appproxy"]
+
   # -- quick hw detection test (no pants needed) --
 
   tt-detect:
@@ -158,6 +193,7 @@ services:
       context: .
       dockerfile: docker/backend.ai-dev.Dockerfile
     privileged: true
+    user: root
     network_mode: host
     volumes:
       - /dev/tenstorrent:/dev/tenstorrent
@@ -165,6 +201,8 @@ services:
       - /sys:/sys:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - ./configs/agent/halfstack-docker.toml:/app/agent.toml:ro
+      - /home/moon/backend.ai/scratches:/home/moon/backend.ai/scratches
+      - /tmp/backend.ai:/tmp/backend.ai
     ipc: host
     depends_on:
       halfstack-db:
