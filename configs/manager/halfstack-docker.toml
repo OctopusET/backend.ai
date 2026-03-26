@@ -10,7 +10,7 @@ type = "postgresql"
 addr = { host = "127.0.0.1", port = 8100 }
 name = "backend"
 user = "postgres"
-password = "develove"
+password = "changeme"
 pool-recycle = 50
 pool-pre-ping = false
 

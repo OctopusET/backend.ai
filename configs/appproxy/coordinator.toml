@@ -2,7 +2,7 @@
 type = "postgresql"
 name = "appproxy"
 user = "appproxy"
-password = "develove"
+password = "changeme"
 pool_size = 8
 max_overflow = 64
 addr = { host = "127.0.0.1", port = 8100 }

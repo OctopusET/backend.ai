@@ -6,10 +6,10 @@ set -euo pipefail
 ALEMBIC_INI="${ALEMBIC_INI:-/app/alembic.ini}"
 MANAGER_CONF="${MANAGER_CONF:-/app/manager.toml}"
 FIXTURE_DIR="/app/fixtures/manager"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@lablup.com}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-wJalrXUt}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-changeme}"
 DB_ADDR="${DB_ADDR:-127.0.0.1:8100}"
-DB_PASSWORD="${DB_PASSWORD:-develove}"
+DB_PASSWORD="${DB_PASSWORD:-changeme}"
 REDIS_ADDR="${REDIS_ADDR:-127.0.0.1}"
 REDIS_PORT="${REDIS_PORT:-8110}"
 ETCD_PORT="${ETCD_PORT:-8120}"
@@ -51,6 +51,29 @@ for f in \
 done
 
 rm -rf "$WORK_DIR"
+
+echo "=== Creating AppProxy database ==="
+python3 -c "
+import asyncio, asyncpg
+
+async def main():
+    conn = await asyncpg.connect('postgresql://postgres:${DB_PASSWORD}@${DB_ADDR}/backend')
+    await conn.execute('COMMIT')  # exit implicit transaction
+    try:
+        await conn.execute('CREATE DATABASE appproxy')
+    except asyncpg.exceptions.DuplicateDatabaseError:
+        pass
+    try:
+        await conn.execute(\"CREATE USER appproxy WITH PASSWORD '${DB_PASSWORD}'\")
+    except asyncpg.exceptions.DuplicateObjectError:
+        pass
+    await conn.execute('GRANT ALL PRIVILEGES ON DATABASE appproxy TO appproxy')
+    await conn.execute('ALTER DATABASE appproxy OWNER TO appproxy')
+    await conn.close()
+    print('  AppProxy database ready')
+
+asyncio.run(main())
+"
 
 echo "=== Seeding etcd ==="
 etcd_put() { python -m ai.backend.cli mgr -f "$MANAGER_CONF" etcd put "$1" "$2"; }

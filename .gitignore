@@ -163,3 +163,5 @@ backup.*.json
 /DIST-INFO
 /INSTALL-INFO
 .serena/
+generated/
+configs/storage-proxy/ssl/

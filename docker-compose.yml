@@ -16,8 +16,8 @@ services:
     ports:
       - "8100:5432"
     environment:
-      - POSTGRES_DB=backend
-      - POSTGRES_PASSWORD=develove
+      - POSTGRES_DB=${BACKENDAI_DB_NAME:-backend}
+      - POSTGRES_PASSWORD=${BACKENDAI_DB_PASSWORD:-changeme}
     volumes:
       - half-db:/var/lib/postgresql/data:rw
     healthcheck:
@@ -81,6 +81,10 @@ services:
     environment:
       - ALEMBIC_INI=/app/alembic.ini
       - MANAGER_CONF=/app/manager.toml
+      - ADMIN_EMAIL=${BACKENDAI_ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${BACKENDAI_ADMIN_PASSWORD:-changeme}
+      - DB_ADDR=${BACKENDAI_DB_ADDR:-127.0.0.1:8100}
+      - DB_PASSWORD=${BACKENDAI_DB_PASSWORD:-changeme}
     entrypoint: ["/bin/bash", "/app/scripts/init-manager.sh"]
     depends_on:
       halfstack-db:
@@ -103,7 +107,7 @@ services:
     depends_on:
       halfstack-db:
         condition: service_healthy
-    profiles: ["init"]
+    profiles: ["init-appproxy"]
 
   # --- Manager ---
 
@@ -116,6 +120,8 @@ services:
     volumes:
       - ./configs/manager/halfstack-docker.toml:/app/manager.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - BACKEND_DB_PASSWORD=${BACKENDAI_DB_PASSWORD:-changeme}
     command: ["python", "-m", "ai.backend.cli", "mgr", "start-server", "--debug"]
     depends_on:
       halfstack-db:
@@ -169,6 +175,7 @@ services:
     network_mode: host
     volumes:
       - ./configs/storage-proxy/storage-proxy.toml:/app/storage-proxy.toml:ro
+      - ./configs/storage-proxy/ssl:/app/configs/storage-proxy/ssl:ro
       - /opt/backendai/vfolders:/opt/backendai/vfolders
     command: ["python", "-m", "ai.backend.cli", "storage", "start-server", "--debug"]
     depends_on:

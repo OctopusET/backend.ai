@@ -1,11 +1,11 @@
-.PHONY: setup init up down logs clean model
+.PHONY: setup init up down logs clean model deploy
 
 COMPOSE := docker compose
 
-## One-time setup: create host directories and SSL certs
+## One-time setup: create host directories and SSL certs (requires sudo)
 setup:
 	sudo mkdir -p /opt/backendai && sudo chown $$(id -u):$$(id -g) /opt/backendai
-	mkdir -p /opt/backendai/{scratches,var,vfolders/volume1,cache/tt,runner}
+	mkdir -p /opt/backendai/scratches /opt/backendai/var /opt/backendai/vfolders/volume1 /opt/backendai/cache/tt /opt/backendai/runner
 	mkdir -p configs/storage-proxy/ssl
 	@if [ ! -f configs/storage-proxy/ssl/manager-api.cert.pem ]; then \
 		openssl req -x509 -newkey rsa:2048 \
@@ -16,11 +16,13 @@ setup:
 	fi
 
 ## Initialize DB, etcd, register images and presets
-init: setup
+init:
 	$(COMPOSE) up -d halfstack-db halfstack-redis halfstack-etcd
 	@echo "Waiting for halfstack..."
 	@sleep 10
-	$(COMPOSE) --profile init up --build
+	$(COMPOSE) --profile init up --build --force-recreate
+	@echo "Setting up AppProxy DB..."
+	$(COMPOSE) --profile init-appproxy up --build --force-recreate
 	@echo "Extracting krunner binaries..."
 	$(COMPOSE) run --rm krunner-setup
 
@@ -35,7 +37,7 @@ down:
 	$(COMPOSE) --profile services down
 	$(COMPOSE) down
 
-## Stop and delete all data
+## Stop and delete all data (requires sudo)
 clean:
 	$(COMPOSE) --profile services --profile init down -v
 	$(COMPOSE) down -v
@@ -52,8 +54,12 @@ model:
 logs:
 	$(COMPOSE) --profile services logs -f
 
-## Full deploy from scratch
-deploy: init up
+## Full deploy: init + start (run 'make setup' first)
+deploy:
+	@echo "=== Initializing ==="
+	$(MAKE) init
+	@echo "=== Starting services ==="
+	$(MAKE) up
 	@echo ""
 	@echo "Backend.AI is running!"
 	@echo "  WebUI: http://$$(hostname -I | awk '{print $$1}'):8090"
