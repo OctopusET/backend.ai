@@ -8,11 +8,12 @@
 #   HF_TOKEN=hf_xxx make model MODEL=meta-llama/Llama-3.1-8B-Instruct  # gated model
 set -euo pipefail
 
-CACHE_DIR="${CACHE_DIR:-/opt/backendai/cache/tt}"
+BACKENDAI_HOME="${BACKENDAI_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/backendai}"
+CACHE_DIR="${CACHE_DIR:-${BACKENDAI_HOME}/cache/tt}"
 MODEL_NAME="${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}"
 MODEL_SHORT="${MODEL_NAME##*/}"
 DEVICE="${DEVICE:-P100}"
-VFOLDER_BASE="${VFOLDER_BASE:-/opt/backendai/vfolders/volume1}"
+VFOLDER_BASE="${VFOLDER_BASE:-${BACKENDAI_HOME}/vfolders/volume1}"
 CONTAINER_CACHE="/home/container_app_user/cache"
 
 echo "=== Setting up TT model: $MODEL_NAME ==="

@@ -1,10 +1,10 @@
 ## Backend.AI - One-command deployment with Tenstorrent support
 ## Usage:
-##   make setup   # one-time: create /opt/backendai
-##   make up      # start everything
+##   make up      # init + start everything (no sudo needed)
 ##   make down    # stop everything
 ##
-## All paths use /opt/backendai so agent and compute containers see the same filesystem.
+## Data stored in ${BACKENDAI_HOME} (default: ~/.local/share/backendai).
+## Host path = container path so sibling containers can bind-mount.
 
 services:
 
@@ -176,7 +176,7 @@ services:
     volumes:
       - ./configs/storage-proxy/storage-proxy.toml:/app/storage-proxy.toml:ro
       - ./configs/storage-proxy/ssl:/app/configs/storage-proxy/ssl:ro
-      - /opt/backendai/vfolders:/opt/backendai/vfolders
+      - ${BACKENDAI_HOME:-~/.local/share/backendai}/vfolders:${BACKENDAI_HOME:-~/.local/share/backendai}/vfolders
     command: ["python", "-m", "ai.backend.cli", "storage", "start-server", "--debug"]
     depends_on:
       halfstack-redis:
@@ -233,8 +233,12 @@ services:
       - /dev/tenstorrent:/dev/tenstorrent
       - /dev/hugepages-1G:/dev/hugepages-1G
       - /sys:/sys:ro
-      - /opt/backendai:/opt/backendai
+      - ${BACKENDAI_HOME:-~/.local/share/backendai}:${BACKENDAI_HOME:-~/.local/share/backendai}
       - ./configs/agent/halfstack-docker.toml:/app/agent.toml:ro
+    environment:
+      - BACKEND_SCRATCH_ROOT=${BACKENDAI_HOME:-~/.local/share/backendai}/scratches
+      - BACKEND_VAR_BASE_PATH=${BACKENDAI_HOME:-~/.local/share/backendai}/var
+      - BACKEND_IMAGE_COMMIT_PATH=${BACKENDAI_HOME:-~/.local/share/backendai}/var/commit
     ipc: host
     depends_on:
       halfstack-db:
@@ -245,15 +249,15 @@ services:
         condition: service_healthy
     profiles: ["services"]
 
-  # --- Krunner extractor (one-shot, extracts krunner binaries to /opt/backendai) ---
+  # --- Krunner extractor (one-shot) ---
 
   krunner-setup:
     build:
       context: .
       dockerfile: docker/backend.ai-dev.Dockerfile
     volumes:
-      - /opt/backendai:/opt/backendai
-    entrypoint: ["/bin/bash", "-c", "cp -a /app/src/ai/backend/runner/* /opt/backendai/runner/ 2>/dev/null; echo 'krunner extracted'"]
+      - ${BACKENDAI_HOME:-~/.local/share/backendai}:${BACKENDAI_HOME:-~/.local/share/backendai}
+    entrypoint: ["/bin/bash", "-c", "cp -a /app/src/ai/backend/runner/* ${BACKENDAI_HOME:-~/.local/share/backendai}/runner/ 2>/dev/null; echo 'krunner extracted'"]
     profiles: ["init"]
 
 volumes:

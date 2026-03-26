@@ -43,6 +43,7 @@ drivers = ["console"]
 colored = true
 format = "verbose"
 
+# Path must match the volume mount in docker-compose.yml
 [volume.volume1]
 backend = "vfs"
 path = "/opt/backendai/vfolders/volume1"
