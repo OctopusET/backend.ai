@@ -29,7 +29,7 @@ VALID_CARD_TYPES: frozenset[str] = frozenset({
 BLACKHOLE_PCI_DEVICE_ID = "0xb140"
 
 # DRAM size per Blackhole chip (32 GiB GDDR6)
-BLACKHOLE_DRAM_BYTES = 32 * (1024 ** 3)
+BLACKHOLE_DRAM_BYTES = 32 * (1024**3)
 
 log = BraceStyleAdapter(logging.getLogger(__spec__.name))  # type: ignore
 
