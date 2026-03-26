@@ -1,5 +1,6 @@
 #! /bin/sh
 
+export PYTHONHOME=/opt/backend.ai
 USER_ID=${LOCAL_USER_ID:-9001}
 GROUP_ID=${LOCAL_GROUP_ID:-9001}
 
@@ -66,6 +67,10 @@ if [ $USER_ID -eq 0 ]; then
     echo "work:$ALPHA_NUMERIC_VAL" | chpasswd -c SHA512
   fi
 
+  # Run image-specific startup hooks if present
+  if [ -x /opt/tt-vllm-start.sh ]; then
+    /opt/tt-vllm-start.sh || true
+  fi
   echo "Executing the main program..."
   exec "$@"
 
@@ -177,6 +182,10 @@ else
     done
   fi
 
+  # Run image-specific startup hooks if present
+  if [ -x /opt/tt-vllm-start.sh ]; then
+    /opt/tt-vllm-start.sh || true
+  fi
   # The gid 42 is a reserved gid for "shadow" to allow passwrd-based SSH login. (lablup/backend.ai#751)
   # Note that we also need to use our own patched version of su-exec to support multiple gids.
   echo "Executing the main program: /opt/kernel/su-exec \"$USER_ID:$GROUP_ID${ADDITIONAL_GIDS:+,$ADDITIONAL_GIDS},42\" \"$@\"..."
