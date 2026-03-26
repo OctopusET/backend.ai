@@ -155,11 +155,11 @@
       },
       "display_icon": "lpu"
     },
-    "tt-n300.device": {
-      "slot_name": "tt-n300.device",
-      "description": "Tenstorrent Wormhole™ n300",
-      "human_readable_name": "Tenstorrent Wormhole™ n300 Device",
-      "display_unit": "n300",
+    "tt.device": {
+      "slot_name": "tt.device",
+      "description": "Tenstorrent AI Accelerator",
+      "human_readable_name": "Tenstorrent",
+      "display_unit": "Device",
       "number_format": {
         "binary": false,
         "round_length": 0
