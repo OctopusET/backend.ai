@@ -1652,6 +1652,8 @@ def main(
     config.override_with_env(raw_cfg, ("container", "bind-host"), "BACKEND_BIND_HOST_OVERRIDE")
     config.override_with_env(raw_cfg, ("container", "sandbox-type"), "BACKEND_SANDBOX_TYPE")
     config.override_with_env(raw_cfg, ("container", "scratch-root"), "BACKEND_SCRATCH_ROOT")
+    config.override_with_env(raw_cfg, ("agent", "var-base-path"), "BACKEND_VAR_BASE_PATH")
+    config.override_with_env(raw_cfg, ("agent", "image-commit-path"), "BACKEND_IMAGE_COMMIT_PATH")
 
     # Validate and fill configurations
     # (allow_extra will make configs to be forward-copmatible)
