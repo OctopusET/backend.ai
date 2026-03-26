@@ -20,7 +20,7 @@ python_distribution(
     ),
     entry_points={
         "backendai_accelerator_v21": {
-            "tt-n300": "ai.backend.accelerator.tenstorrent.n300.plugin:TTn300Plugin",
+            "tt": "ai.backend.accelerator.tenstorrent.blackhole.plugin:TTBlackholePlugin",
         }
     },
     generate_setup=True,
