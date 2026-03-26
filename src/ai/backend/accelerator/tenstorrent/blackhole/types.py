@@ -6,7 +6,7 @@ __all__ = ("TTBlackholeDevice",)
 
 class TTBlackholeDevice(AbstractTTDevice):
     def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, device_name=DeviceName("tt-blackhole"), **kwargs)
+        super().__init__(*args, device_name=DeviceName("tt"), **kwargs)
 
     def __str__(self) -> str:
         return (

@@ -1,4 +1,6 @@
-from tt_tools_common.utils_common.tools_utils import PciChip
+from __future__ import annotations
+
+from typing import Any
 
 from ai.backend.agent.resources import AbstractComputeDevice
 from ai.backend.common.types import DeviceId, DeviceName
@@ -10,7 +12,7 @@ class AbstractTTDevice(AbstractComputeDevice):
     model_name: str
     serial: DeviceId
     device_number: int
-    tt_pci_chip: PciChip
+    tt_pci_chip: Any  # Optional, not used in sysfs-only mode
     tt_device_idx: int
 
     def __init__(
@@ -18,7 +20,7 @@ class AbstractTTDevice(AbstractComputeDevice):
         model_name: str,
         serial: DeviceId,
         device_number: int,
-        tt_pci_chip: PciChip,
+        tt_pci_chip: Any,
         tt_device_idx: int,
         *args: object,
         device_name: DeviceName | None = None,

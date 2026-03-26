@@ -243,7 +243,7 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
 
         return {
             "HostConfig": {
-                "CapAdd": ["IPC_LOCK"],
+                "CapAdd": ["IPC_LOCK", "SYS_RAWIO"],
                 "IpcMode": "host",
                 "Ulimits": [
                     {
@@ -270,7 +270,14 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
                         "Source": "/dev/hugepages-1G",
                         "Target": "/dev/hugepages-1G",
                         "Type": "bind",
-                    }
+                    },
+                    {
+                        "BindOptions": {},
+                        "ReadOnly": False,
+                        "Source": "/opt/backendai/cache/tt",
+                        "Target": "/home/container_app_user/cache",
+                        "Type": "bind",
+                    },
                 ],
             },
         }

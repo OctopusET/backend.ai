@@ -26,11 +26,11 @@ log = BraceStyleAdapter(logging.getLogger(__spec__.name))  # type: ignore
 
 
 class TTn300Plugin(AbstractTTPlugin[TTn300Device]):
-    key = DeviceName("tt-n300")
+    key = DeviceName("tt")
     slot_types: Sequence[tuple[SlotName, SlotTypes]] = (
-        (SlotName("tt-n300.device"), SlotTypes("count")),
+        (SlotName("tt.device"), SlotTypes("count")),
     )
-    exclusive_slot_types: set[str] = {"tt-n300.device"}
+    exclusive_slot_types: set[str] = {"tt.device"}
 
     async def _list_devices(self) -> list[TTn300Device]:
         devices: list[TTn300Device] = []
@@ -88,7 +88,7 @@ class TTn300Plugin(AbstractTTPlugin[TTn300Device]):
 
     def get_metadata(self) -> AcceleratorMetadata:
         return {
-            "slot_name": "tt-n300.device",
+            "slot_name": "tt.device",
             "description": "Tenstorrent n300",
             "human_readable_name": "Tenstorrent n300 Device",
             "display_unit": "n300",

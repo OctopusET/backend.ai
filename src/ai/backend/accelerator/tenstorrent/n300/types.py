@@ -6,7 +6,7 @@ __all__ = ("TTn300Device",)
 
 class TTn300Device(AbstractTTDevice):
     def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, device_name=DeviceName("tt-n300"), **kwargs)
+        super().__init__(*args, device_name=DeviceName("tt"), **kwargs)
 
     def __str__(self) -> str:
         return (

@@ -3,15 +3,10 @@ from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
 
-from tt_smi.tt_smi_backend import TTSMIBackend
-from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
-
 from ai.backend.accelerator.tenstorrent.common.plugin import AbstractTTPlugin, TTDeviceTelemetry
-from ai.backend.accelerator.tenstorrent.utils import resolve_pci_sysfs_path
 from ai.backend.common.logging import BraceStyleAdapter
 from ai.backend.common.types import (
     AcceleratorMetadata,
-    BinarySize,
     DeviceId,
     DeviceName,
     SlotName,
@@ -30,63 +25,81 @@ VALID_CARD_TYPES: frozenset[str] = frozenset({
     "p300c",
 })
 
+# PCI device ID for Blackhole
+BLACKHOLE_PCI_DEVICE_ID = "0xb140"
+
+# DRAM size per Blackhole chip (32 GiB GDDR6)
+BLACKHOLE_DRAM_BYTES = 32 * (1024 ** 3)
+
 log = BraceStyleAdapter(logging.getLogger(__spec__.name))  # type: ignore
 
 
 class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
-    key = DeviceName("tt-blackhole")
+    key = DeviceName("tt")
     slot_types: Sequence[tuple[SlotName, SlotTypes]] = (
-        (SlotName("tt-blackhole.device"), SlotTypes("count")),
+        (SlotName("tt.device"), SlotTypes("count")),
     )
-    exclusive_slot_types: set[str] = {"tt-blackhole.device"}
+    exclusive_slot_types: set[str] = {"tt.device"}
 
     _hwmon_paths: dict[DeviceId, Path]
 
     async def _list_devices(self) -> list[TTBlackholeDevice]:
+        """Discover Tenstorrent devices using sysfs only (no TTSMIBackend)."""
         devices: list[TTBlackholeDevice] = []
         self._hwmon_paths = {}
 
-        tt_devices = detect_chips_with_callback(print_status=False)
-        backend = TTSMIBackend(tt_devices, pretty_output=False)
+        tt_class = Path("/sys/class/tenstorrent")
+        if not tt_class.is_dir():
+            return devices
 
-        self._tt_devices = tt_devices
-        self._tt_backend = backend
+        for entry in sorted(tt_class.iterdir()):
+            # entry = /sys/class/tenstorrent/tenstorrent!N
+            name = entry.name  # "tenstorrent!0"
+            device_number = int(name.split("!")[-1])
 
-        for device_idx, pci_chip in enumerate(tt_devices):
-            device_info = backend.get_device_info(device_idx)
-            if device_info["board_type"] not in VALID_CARD_TYPES or device_info["bus_id"] == "N/A":
+            # Read card type from sysfs
+            card_type_path = entry / "tt_card_type"
+            if not card_type_path.exists():
                 continue
-            log.debug("Config: {}", device_info)
+            card_type = card_type_path.read_text().strip()
+            if card_type not in VALID_CARD_TYPES:
+                continue
 
-            bus_id = device_info["bus_id"]
-            pci_sysfs = Path(f"/sys/bus/pci/devices/{bus_id}")
-            hwmon_dir = pci_sysfs / "hwmon"
+            # Read serial
+            serial_path = entry / "tt_serial"
+            serial = serial_path.read_text().strip() if serial_path.exists() else "unknown"
+
+            # Get PCI bus ID from device symlink
+            device_link = entry / "device"
+            if not device_link.is_symlink():
+                continue
+            bus_id = device_link.resolve().name  # "0000:XX:YY.Z"
+
+            # hwmon
+            hwmon_dir = device_link / "hwmon"
             if hwmon_dir.is_dir():
                 hwmon_entries = list(hwmon_dir.iterdir())
                 if hwmon_entries:
-                    self._hwmon_paths[DeviceId(str(device_idx))] = hwmon_entries[0]
+                    self._hwmon_paths[DeviceId(str(device_number))] = hwmon_entries[0]
 
-            pci_idx, bus, _dev_fn = bus_id.split(":", maxsplit=3)
-            pci_base_path = resolve_pci_sysfs_path(f"{pci_idx}:{bus}")
-            if not pci_base_path:
-                raise RuntimeError("PCI device file not found in the sysfs!")
-
-            numa_node_idx_path = Path(pci_base_path) / "device" / "numa_node"
-            numa_node_idx = int(numa_node_idx_path.read_text())
-            if numa_node_idx < 0:
-                numa_node_idx = 0
+            # NUMA node
+            numa_path = device_link / "numa_node"
+            numa_node = 0
+            if numa_path.exists():
+                numa_val = int(numa_path.read_text().strip())
+                numa_node = max(0, numa_val)
 
             device = TTBlackholeDevice(
-                model_name=f"Tenstorrent {device_info['board_type']}",
-                serial=DeviceId(device_info["board_id"]),
-                device_id=DeviceId(str(device_idx)),
-                device_number=int(device_idx),
+                model_name=f"Tenstorrent {card_type}",
+                serial=DeviceId(serial),
+                device_id=DeviceId(str(device_number)),
+                device_number=device_number,
                 hw_location=bus_id,
-                memory_size=int(BinarySize.from_str(device_info["dram_speed"])) * 2,
+                memory_size=BLACKHOLE_DRAM_BYTES,
                 processing_units=0,
-                numa_node=numa_node_idx,
-                tt_pci_chip=pci_chip,
-                tt_device_idx=device_idx,
+                numa_node=numa_node,
+                tt_pci_chip=None,  # type: ignore[arg-type]
+                tt_device_idx=device_number,
             )
             devices.append(device)
 
@@ -102,13 +115,9 @@ class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
             return None
 
     async def _gather_device_telemetry(self, device: TTBlackholeDevice) -> TTDeviceTelemetry:
-        # Power: hwmon reports microwatts, convert to watts
+        # Power: hwmon reports microwatts
         power_uw = self._read_hwmon(device.device_id, "power1_input")
-        if power_uw is not None:
-            power_w = Decimal(power_uw) / Decimal(1_000_000)
-        else:
-            stat = self._tt_backend.get_chip_telemetry(device.tt_device_idx)
-            power_w = Decimal(stat["power"].strip())
+        power_w = Decimal(power_uw) / Decimal(1_000_000) if power_uw is not None else Decimal(0)
 
         # Temperature: hwmon reports millidegrees
         temp_m = self._read_hwmon(device.device_id, "temp1_input")
@@ -123,7 +132,7 @@ class TTBlackholePlugin(AbstractTTPlugin[TTBlackholeDevice]):
 
     def get_metadata(self) -> AcceleratorMetadata:
         return {
-            "slot_name": "tt-blackhole.device",
+            "slot_name": "tt.device",
             "description": "Tenstorrent Blackhole",
             "human_readable_name": "Tenstorrent Blackhole Device",
             "display_unit": "blackhole",
