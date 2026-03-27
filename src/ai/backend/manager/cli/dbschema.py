@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.resources
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
@@ -70,7 +71,7 @@ def show(_cli_ctx: CLIContext, alembic_config: str) -> None:
         print(f"The head revision of available migrations: {head_rev}")
 
     alembic_cfg = Config(alembic_config)
-    sa_url = alembic_cfg.get_main_option("sqlalchemy.url")
+    sa_url = os.environ.get("ALEMBIC_DATABASE_URL") or alembic_cfg.get_main_option("sqlalchemy.url")
     if sa_url is None:
         raise ConfigurationLoadFailed("sqlalchemy.url is not configured in alembic config")
     sa_url = sa_url.replace("postgresql://", "postgresql+asyncpg://")
@@ -269,7 +270,7 @@ def oneshot(_cli_ctx: CLIContext, alembic_config: str) -> None:
             log.info("Use 'alembic upgrade head' to apply pending migrations.")
 
     alembic_cfg = Config(alembic_config)
-    sa_url = alembic_cfg.get_main_option("sqlalchemy.url")
+    sa_url = os.environ.get("ALEMBIC_DATABASE_URL") or alembic_cfg.get_main_option("sqlalchemy.url")
     if sa_url is None:
         raise ConfigurationLoadFailed("sqlalchemy.url is not configured in alembic config")
     sa_url = sa_url.replace("postgresql://", "postgresql+asyncpg://")
