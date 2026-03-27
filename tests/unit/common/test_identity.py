@@ -22,6 +22,7 @@ from ai.backend.common.identity import (
     _detect_azure,
     _detect_gcp,
     detect_cloud,
+    resolve_local_ip,
 )
 
 
@@ -584,3 +585,54 @@ class TestIdentityFunctions:
         mock_curl.return_value = curl_return
         result = await ai.backend.common.identity.get_instance_id()
         assert result == "i-testhost"
+
+
+class TestResolveLocalIp:
+    def test_returns_non_loopback_ip(self) -> None:
+        result = resolve_local_ip()
+        assert result is not None
+        assert not result.startswith("127.")
+
+    def test_returns_valid_ipv4_format(self) -> None:
+        result = resolve_local_ip()
+        if result is not None:
+            parts = result.split(".")
+            assert len(parts) == 4
+            assert all(0 <= int(p) <= 255 for p in parts)
+
+    def test_with_mocked_no_interfaces(self) -> None:
+        with patch("ai.backend.common.identity.ifaddr.get_adapters", return_value=[]):
+            assert resolve_local_ip() is None
+
+    def test_with_mocked_loopback_only(self) -> None:
+        mock_adapter = MagicMock()
+        mock_ip = MagicMock()
+        mock_ip.is_IPv4 = True
+        mock_ip.ip = "127.0.0.1"
+        mock_adapter.ips = [mock_ip]
+        with patch("ai.backend.common.identity.ifaddr.get_adapters", return_value=[mock_adapter]):
+            assert resolve_local_ip() is None
+
+    def test_with_mocked_real_interface(self) -> None:
+        mock_adapter = MagicMock()
+        mock_lo = MagicMock()
+        mock_lo.is_IPv4 = True
+        mock_lo.ip = "127.0.0.1"
+        mock_eth = MagicMock()
+        mock_eth.is_IPv4 = True
+        mock_eth.ip = "192.168.1.100"
+        mock_adapter.ips = [mock_lo, mock_eth]
+        with patch("ai.backend.common.identity.ifaddr.get_adapters", return_value=[mock_adapter]):
+            assert resolve_local_ip() == "192.168.1.100"
+
+    def test_skips_ipv6(self) -> None:
+        mock_adapter = MagicMock()
+        mock_v6 = MagicMock()
+        mock_v6.is_IPv4 = False
+        mock_v6.ip = ("fe80::1", 0, 0)
+        mock_v4 = MagicMock()
+        mock_v4.is_IPv4 = True
+        mock_v4.ip = "10.0.0.5"
+        mock_adapter.ips = [mock_v6, mock_v4]
+        with patch("ai.backend.common.identity.ifaddr.get_adapters", return_value=[mock_adapter]):
+            assert resolve_local_ip() == "10.0.0.5"
