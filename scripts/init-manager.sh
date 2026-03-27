@@ -3,6 +3,22 @@
 # Run once against a fresh halfstack.
 set -euo pipefail
 
+# --- Data directories ---
+BACKENDAI_HOME="${BACKENDAI_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/backendai}"
+echo "=== Creating data directories in $BACKENDAI_HOME ==="
+mkdir -p "$BACKENDAI_HOME/scratches" "$BACKENDAI_HOME/var" "$BACKENDAI_HOME/var/commit" \
+         "$BACKENDAI_HOME/vfolders/volume1" "$BACKENDAI_HOME/cache/tt" "$BACKENDAI_HOME/runner"
+
+# --- SSL certs for storage-proxy ---
+SSL_DIR="${SSL_DIR:-/app/ssl}"
+if [ -d "$SSL_DIR" ] && [ ! -f "$SSL_DIR/manager-api.cert.pem" ]; then
+    echo "=== Generating self-signed SSL certs ==="
+    openssl req -x509 -newkey rsa:2048 \
+        -keyout "$SSL_DIR/manager-api.key.pem" \
+        -out "$SSL_DIR/manager-api.cert.pem" \
+        -days 365 -nodes -subj '/CN=localhost' 2>/dev/null
+fi
+
 ALEMBIC_INI="${ALEMBIC_INI:-/app/alembic.ini}"
 MANAGER_CONF="${MANAGER_CONF:-/app/manager.toml}"
 FIXTURE_DIR="/app/fixtures/manager"
