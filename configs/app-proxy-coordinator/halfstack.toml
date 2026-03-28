@@ -2,13 +2,13 @@
 type = "postgresql"
 name = "appproxy"
 user = "appproxy"
-password = "develove"
+password = "${BA_DB_PASSWORD:-develove}"
 pool_size = 8
 max_overflow = 64
-addr = { host = "127.0.0.1", port = 8100 }
+addr = { host = "${BA_DB_HOST:-127.0.0.1}", port = "${BA_DB_PORT:-8100}" }
 
 [redis]
-addr = { host = "127.0.0.1", port = 8110 }
+addr = { host = "${BA_REDIS_HOST:-127.0.0.1}", port = "${BA_REDIS_PORT:-8110}" }
 
 [proxy_coordinator]
 tls_listen = false
@@ -22,8 +22,7 @@ host = "0.0.0.0"
 port = 10200
 
 [proxy_coordinator.advertised_addr]
-# Change `host` and `port` to the actual host and port for user access
-host = "127.0.0.1"
+host = "${BA_ADVERTISED_HOST:-0.0.0.0}"
 port = 10200
 
 [secrets]

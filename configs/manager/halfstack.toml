@@ -1,16 +1,16 @@
 [etcd]
-namespace = "local"
-addr = { host = "127.0.0.1", port = 8120 }
+namespace = "${BA_NAMESPACE:-local}"
+addr = { host = "${BA_ETCD_HOST:-127.0.0.1}", port = "${BA_ETCD_PORT:-8120}" }
 user = ""
 password = ""
 
 
 [db]
 type = "postgresql"
-addr = { host = "localhost", port = 8100 }
-name = "backend"
-user = "postgres"
-password = "develove"
+addr = { host = "${BA_DB_HOST:-localhost}", port = "${BA_DB_PORT:-8100}" }
+name = "${BA_DB_NAME:-backend}"
+user = "${BA_DB_USER:-postgres}"
+password = "${BA_DB_PASSWORD:-develove}"
 pool-recycle = 50
 pool-pre-ping = false
 
