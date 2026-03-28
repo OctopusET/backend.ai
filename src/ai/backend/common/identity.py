@@ -168,6 +168,20 @@ def fetch_local_ipaddrs(cidr: BaseIPNetwork[Any]) -> Iterable[BaseIPAddress]:
                 yield addr
 
 
+def resolve_local_ip() -> str | None:
+    """Resolve the first non-loopback IPv4 address from network interfaces.
+
+    Returns the IP address as a string, or None if no suitable address is found.
+    This is useful for resolving ``0.0.0.0`` bind addresses to an externally
+    reachable IP for advertised/announced addresses.
+    """
+    for adapter in ifaddr.get_adapters():
+        for entry in adapter.ips:
+            if entry.is_IPv4 and isinstance(entry.ip, str) and not entry.ip.startswith("127."):
+                return entry.ip
+    return None
+
+
 def get_root_fs_type() -> tuple[PosixPath, str]:
     for partition in psutil.disk_partitions():
         if partition.mountpoint == "/":

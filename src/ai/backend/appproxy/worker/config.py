@@ -39,6 +39,7 @@ from ai.backend.common.configs import (
     ServiceDiscoveryConfig,
 )
 from ai.backend.common.meta import BackendAIConfigMeta, CompositeType, ConfigExample
+from ai.backend.common.mode import resolve_advertised_host
 from ai.backend.common.typed_validators import AutoDirectoryPath
 from ai.backend.common.types import ServiceDiscoveryType
 from ai.backend.logging import LogLevel
@@ -186,6 +187,16 @@ class PortProxyConfig(BaseSchema):
             example=ConfigExample(local="", prod="10205,10300"),
         ),
     ]
+
+    @model_validator(mode="after")
+    def resolve_advertised_host(self) -> Self:
+        host = self.advertised_host or self.bind_host
+        resolved = resolve_advertised_host(host)
+        if resolved != host:
+            self.advertised_host = resolved
+        elif self.advertised_host is None:
+            self.advertised_host = self.bind_host
+        return self
 
 
 class H2Config(BaseSchema):
@@ -803,6 +814,13 @@ class ProxyWorkerConfig(BaseSchema):
     def populate_announce_addr(self) -> Self:
         if self.announce_addr is None:
             self.announce_addr = self.api_bind_addr
+        resolved = resolve_advertised_host(self.announce_addr.host)
+        if resolved != self.announce_addr.host:
+            self.announce_addr = HostPortPair(host=resolved, port=self.announce_addr.port)
+        if self.api_advertised_addr and self.api_advertised_addr.host in ("0.0.0.0", ""):
+            self.api_advertised_addr = HostPortPair(
+                host=resolved, port=self.api_advertised_addr.port
+            )
         return self
 
     @model_validator(mode="after")
