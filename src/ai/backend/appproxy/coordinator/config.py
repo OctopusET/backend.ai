@@ -4,10 +4,10 @@ import socket
 import sys
 from pathlib import Path
 from pprint import pformat
-from typing import Annotated
+from typing import Annotated, Self
 
 import click
-from pydantic import Field, FilePath, ValidationError
+from pydantic import Field, FilePath, ValidationError, model_validator
 
 from ai.backend.appproxy.common.config import (
     BaseSchema,
@@ -30,6 +30,7 @@ from ai.backend.common.configs import (
     ServiceDiscoveryConfig,
 )
 from ai.backend.common.meta import BackendAIConfigMeta, CompositeType, ConfigExample
+from ai.backend.common.mode import resolve_advertised_host
 from ai.backend.common.types import ServiceDiscoveryType
 from ai.backend.logging import LogLevel
 from ai.backend.logging.config import LoggingConfig
@@ -526,6 +527,16 @@ class ProxyCoordinatorConfig(BaseSchema):
             example=ConfigExample(local="127.0.0.1:10200", prod="coordinator.example.com:10200"),
         ),
     ]
+
+    @model_validator(mode="after")
+    def resolve_advertised(self) -> Self:
+        addr = self.advertised_addr if self.advertised_addr is not None else self.bind_addr
+        resolved = resolve_advertised_host(addr.host)
+        if resolved != addr.host:
+            self.advertised_addr = HostPortPair(host=resolved, port=addr.port)
+        elif self.advertised_addr is None:
+            self.advertised_addr = self.bind_addr
+        return self
 
     @property
     def advertise_base_url(self) -> str:
