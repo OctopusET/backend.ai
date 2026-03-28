@@ -26,6 +26,10 @@ RVRS="\033[7m"
 NC="\033[0m"
 REWRITELN="\033[A\r\033[K"
 
+# Configurable defaults (override via environment variables)
+BA_DB_PASSWORD="${BA_DB_PASSWORD:-develove}"
+BA_REDIS_PASSWORD="${BA_REDIS_PASSWORD:-develove}"
+
 readlinkf() {
   scripts/python.sh -c "import os,sys; print(os.path.realpath(os.path.expanduser(sys.argv[1])))" "${1}"
 }
@@ -932,19 +936,19 @@ setup_environment() {
     # Appends the given text to sentinel01.conf
     echo "" >> $sentinel01_cfg_path
     sed_inplace "s/REDIS_SENTINEL_SELF_HOST/sentinel01/g" "$sentinel01_cfg_path"
-    sed_inplace "s/REDIS_PASSWORD/develove/g" "$sentinel01_cfg_path"
+    sed_inplace "s/REDIS_PASSWORD/${BA_REDIS_PASSWORD}/g" "$sentinel01_cfg_path"
     sed_inplace "s/REDIS_SENTINEL_SELF_PORT/9503/g" "$sentinel01_cfg_path"
 
     # Appends the given text to sentinel02.conf
     echo "" >> $sentinel02_cfg_path
     sed_inplace "s/REDIS_SENTINEL_SELF_HOST/sentinel02/g" "$sentinel02_cfg_path"
-    sed_inplace "s/REDIS_PASSWORD/develove/g" "$sentinel02_cfg_path"
+    sed_inplace "s/REDIS_PASSWORD/${BA_REDIS_PASSWORD}/g" "$sentinel02_cfg_path"
     sed_inplace "s/REDIS_SENTINEL_SELF_PORT/9504/g" "$sentinel02_cfg_path"
 
     # Appends the given text to sentinel03.conf
     echo "" >> $sentinel03_cfg_path
     sed_inplace "s/REDIS_SENTINEL_SELF_HOST/sentinel03/g" "$sentinel03_cfg_path"
-    sed_inplace "s/REDIS_PASSWORD/develove/g" "$sentinel03_cfg_path"
+    sed_inplace "s/REDIS_PASSWORD/${BA_REDIS_PASSWORD}/g" "$sentinel03_cfg_path"
     sed_inplace "s/REDIS_SENTINEL_SELF_PORT/9505/g" "$sentinel03_cfg_path"
   else
     SOURCE_COMPOSE_PATH="docker-compose.halfstack-main.yml"
@@ -1027,7 +1031,7 @@ configure_backendai() {
   if [ $CONFIGURE_HA -eq 1 ]; then
     ./backend.ai mgr etcd put config/redis/sentinel "127.0.0.1:${REDIS_SENTINEL1_PORT},127.0.0.1:${REDIS_SENTINEL2_PORT},127.0.0.1:${REDIS_SENTINEL3_PORT}"
     ./backend.ai mgr etcd put config/redis/service_name "mymaster"
-    ./backend.ai mgr etcd put config/redis/password "develove"
+    ./backend.ai mgr etcd put config/redis/password "${BA_REDIS_PASSWORD}"
   else
     ./backend.ai mgr etcd put config/redis/addr "127.0.0.1:${REDIS_PORT}"
   fi
@@ -1134,7 +1138,7 @@ configure_backendai() {
 
   if [ $CONFIGURE_HA -eq 1 ]; then
     sed_inplace "s/redis.addr = \"localhost:6379\"/# redis.addr = \"localhost:6379\"/" ./webserver.conf
-    sed_inplace "s/# redis.password = \"mysecret\"/redis.password = \"develove\"/" ./webserver.conf
+    sed_inplace "s/# redis.password = \"mysecret\"/redis.password = \"${BA_REDIS_PASSWORD}\"/" ./webserver.conf
     sed_inplace "s/# redis.service_name = \"mymaster\"/redis.service_name = \"mymaster\"/" ./webserver.conf
     sed_inplace "s/# redis.sentinel = \"127.0.0.1:9503,127.0.0.1:9504,127.0.0.1:9505\"/redis.sentinel = \"127.0.0.1:9503,127.0.0.1:9504,127.0.0.1:9505\"/ " ./webserver.conf
   else
@@ -1187,15 +1191,15 @@ configure_backendai() {
   # TODO: populate fixtures
 
   show_info "Setting up databases... (app-proxy)"
-  _psql_core="$docker_sudo docker exec -e PGPASSWORD=develove $POSTGRES_CONTAINER_ID psql -U postgres -d backend -q"
-  _psql_appproxy="$docker_sudo docker exec -e PGPASSWORD=develove $POSTGRES_CONTAINER_ID psql -U postgres -d appproxy -q"
+  _psql_core="$docker_sudo docker exec -e PGPASSWORD=${BA_DB_PASSWORD} $POSTGRES_CONTAINER_ID psql -U postgres -d backend -q"
+  _psql_appproxy="$docker_sudo docker exec -e PGPASSWORD=${BA_DB_PASSWORD} $POSTGRES_CONTAINER_ID psql -U postgres -d appproxy -q"
   $_psql_core -c "\
     DO \$\$
     BEGIN
        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'appproxy') THEN
-          CREATE ROLE appproxy WITH LOGIN PASSWORD 'develove';
+          CREATE ROLE appproxy WITH LOGIN PASSWORD '${BA_DB_PASSWORD}';
        ELSE
-          ALTER ROLE appproxy WITH LOGIN PASSWORD 'develove';
+          ALTER ROLE appproxy WITH LOGIN PASSWORD '${BA_DB_PASSWORD}';
        END IF;
     END
     \$\$;"
