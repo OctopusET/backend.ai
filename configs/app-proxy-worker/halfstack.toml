@@ -18,7 +18,7 @@ api_advertised_addr = { host = "${BA_ADVERTISED_HOST:-127.0.0.1}", port = 10201 
 [proxy_worker.port_proxy]
 bind_host = "0.0.0.0"
 advertised_host = "${BA_ADVERTISED_HOST:-0.0.0.0}"
-bind_port_range = [10205, 10300]
+bind_port_range = [10300, 10400]
 
 [secrets]
 api_secret = "some_api_secret"

@@ -25,6 +25,7 @@ var-base-path = "${BA_VAR_BASE_PATH:-./var/lib/backend.ai}"
 image-commit-path = "${BA_IMAGE_COMMIT_PATH:-./tmp/backend.ai/commit/}"
 mount-path = "./vfroot/local"
 cohabiting-storage-proxy = true
+metadata-server-port = 40228
 
 
 [container]
