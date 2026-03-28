@@ -1,0 +1,253 @@
+## Backend.AI - Docker Compose deployment
+##
+## Usage:
+##   make setup   # one-time init (DB, etcd, fixtures)
+##   make up      # start all services
+##   make down    # stop all services
+##   make logs    # tail service logs
+##
+## Config: upstream halfstack.toml + BA_* env overrides
+## Network: host mode (agent creates sibling containers via docker.sock)
+
+x-base: &base
+  build:
+    context: .
+    dockerfile: docker/backend.ai-dev.Dockerfile
+
+services:
+
+  # --- Infrastructure ---
+
+  halfstack-db:
+    image: postgres:16.3-alpine
+    restart: unless-stopped
+    ports: ["${BA_DB_PORT:-8100}:5432"]
+    environment:
+      POSTGRES_DB: ${BA_DB_NAME:-backend}
+      POSTGRES_PASSWORD: ${BA_DB_PASSWORD:-develove}
+    volumes:
+      - half-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  halfstack-redis:
+    image: redis:7.2.11-alpine
+    restart: unless-stopped
+    ports: ["${BA_REDIS_PORT:-8110}:6379"]
+    volumes:
+      - half-redis:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  halfstack-etcd:
+    image: quay.io/coreos/etcd:v3.5.14
+    restart: unless-stopped
+    ports: ["${BA_ETCD_PORT:-8120}:2379"]
+    volumes:
+      - half-etcd:/etcd-data
+    command: >-
+      /usr/local/bin/etcd
+      --name backendai-etcd
+      --data-dir /etcd-data
+      --listen-client-urls http://0.0.0.0:2379
+      --advertise-client-urls http://0.0.0.0:2379
+      --listen-peer-urls http://0.0.0.0:2380
+      --initial-advertise-peer-urls http://0.0.0.0:2380
+      --initial-cluster backendai-etcd=http://0.0.0.0:2380
+      --initial-cluster-token backendai-etcd-token
+      --initial-cluster-state new
+      --enable-v2=true
+      --auto-compaction-retention 1
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Init (one-shot, run via `make setup`) ---
+
+  init:
+    <<: *base
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack.toml:/app/manager.toml:ro
+      - ./configs/manager/halfstack.alembic.ini:/app/alembic.ini:ro
+      - ./configs/storage-proxy/ssl:/app/ssl
+      - ${BA_HOME}:${BA_HOME}
+    environment:
+      ALEMBIC_INI: /app/alembic.ini
+      BACKEND_ALEMBIC_DATABASE_URL: postgresql+asyncpg://postgres:${BA_DB_PASSWORD:-develove}@127.0.0.1:${BA_DB_PORT:-8100}/${BA_DB_NAME:-backend}
+      MANAGER_CONF: /app/manager.toml
+      ADMIN_EMAIL: ${BA_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${BA_ADMIN_PASSWORD:-changeme}
+      DB_ADDR: 127.0.0.1:${BA_DB_PORT:-8100}
+      DB_PASSWORD: ${BA_DB_PASSWORD:-develove}
+      BA_HOME: ${BA_HOME}
+    entrypoint: ["/bin/bash", "/app/scripts/init-manager.sh"]
+    depends_on:
+      halfstack-db: { condition: service_healthy }
+      halfstack-etcd: { condition: service_healthy }
+    profiles: ["init"]
+
+  init-appproxy:
+    <<: *base
+    network_mode: host
+    volumes:
+      - ./configs/app-proxy-coordinator/halfstack.toml:/app/app-proxy-coordinator.toml:ro
+      - ./configs/app-proxy-coordinator/halfstack.alembic.ini:/app/alembic-appproxy.ini:ro
+    environment:
+      BACKEND_ALEMBIC_DATABASE_URL: postgresql+asyncpg://appproxy:${BA_DB_PASSWORD:-develove}@127.0.0.1:${BA_DB_PORT:-8100}/appproxy
+    entrypoint: >-
+      python -m ai.backend.cli app-proxy-coordinator
+      -f /app/app-proxy-coordinator.toml
+      schema oneshot
+      -f /app/alembic-appproxy.ini
+    depends_on:
+      init: { condition: service_completed_successfully }
+      halfstack-db: { condition: service_healthy }
+    profiles: ["init"]
+
+  krunner-setup:
+    <<: *base
+    volumes:
+      - ${BA_HOME}:${BA_HOME}
+    environment:
+      BA_HOME: ${BA_HOME}
+    entrypoint: ["/bin/bash", "-c", "cp -a /app/src/ai/backend/runner/* $BA_HOME/runner/ 2>/dev/null; echo 'krunner extracted'"]
+    depends_on:
+      init: { condition: service_completed_successfully }
+    profiles: ["init"]
+
+  # --- Services (run via `make up`) ---
+
+  manager:
+    <<: *base
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/manager/halfstack.toml:/app/manager.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      BA_DB_PASSWORD: ${BA_DB_PASSWORD:-develove}
+      BA_DB_HOST: 127.0.0.1
+      BA_DB_PORT: ${BA_DB_PORT:-8100}
+      BA_ETCD_HOST: 127.0.0.1
+      BA_ETCD_PORT: ${BA_ETCD_PORT:-8120}
+    command: ["python", "-m", "ai.backend.cli", "mgr", "start-server", "--debug"]
+    depends_on:
+      halfstack-db: { condition: service_healthy }
+      halfstack-redis: { condition: service_healthy }
+      halfstack-etcd: { condition: service_healthy }
+    profiles: ["services"]
+
+  webserver:
+    <<: *base
+    network_mode: host
+    volumes:
+      - ./configs/webserver/halfstack-docker.conf:/app/webserver.conf:ro
+    command: ["python", "-m", "ai.backend.cli", "web", "start-server", "--debug"]
+    depends_on:
+      halfstack-db: { condition: service_healthy }
+      halfstack-redis: { condition: service_healthy }
+      halfstack-etcd: { condition: service_healthy }
+    profiles: ["services"]
+
+  graphql-gateway:
+    image: ghcr.io/graphql-hive/gateway:2.1.12
+    network_mode: host
+    command: ["supergraph"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000
+    volumes:
+      - ./docs/manager/graphql-reference/supergraph.graphql:/gateway/supergraph.graphql:ro
+      - ./configs/graphql/gateway-docker.config.ts:/gateway/gateway.config.ts:ro
+    profiles: ["services"]
+
+  storage-proxy:
+    <<: *base
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/storage-proxy/halfstack.toml:/app/storage-proxy.toml:ro
+      - ./configs/storage-proxy/ssl:/app/configs/storage-proxy/ssl:ro
+      - ${BA_HOME}/vfolders:/opt/backendai/vfolders
+    environment:
+      BA_ETCD_HOST: 127.0.0.1
+      BA_ETCD_PORT: ${BA_ETCD_PORT:-8120}
+    command: ["python", "-m", "ai.backend.cli", "storage", "start-server", "--debug"]
+    depends_on:
+      halfstack-redis: { condition: service_healthy }
+      halfstack-etcd: { condition: service_healthy }
+    profiles: ["services"]
+
+  appproxy-coordinator:
+    <<: *base
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/app-proxy-coordinator/halfstack.toml:/app/app-proxy-coordinator.toml:ro
+    environment:
+      BA_DB_PASSWORD: ${BA_DB_PASSWORD:-develove}
+      BA_DB_HOST: 127.0.0.1
+      BA_DB_PORT: ${BA_DB_PORT:-8100}
+      BA_REDIS_HOST: 127.0.0.1
+      BA_REDIS_PORT: ${BA_REDIS_PORT:-8110}
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-coordinator", "start-server", "--debug"]
+    depends_on:
+      halfstack-db: { condition: service_healthy }
+      halfstack-redis: { condition: service_healthy }
+    profiles: ["services"]
+
+  appproxy-worker:
+    <<: *base
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs/app-proxy-worker/halfstack.toml:/app/app-proxy-worker.toml:ro
+    environment:
+      BA_REDIS_HOST: 127.0.0.1
+      BA_REDIS_PORT: ${BA_REDIS_PORT:-8110}
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-worker", "start-server", "--debug"]
+    depends_on:
+      halfstack-redis: { condition: service_healthy }
+    profiles: ["services"]
+
+  agent:
+    <<: *base
+    privileged: true
+    user: root
+    network_mode: host
+    ipc: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev/tenstorrent:/dev/tenstorrent
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - /sys:/sys:ro
+      - ${BA_HOME}:${BA_HOME}
+      - ./configs/agent/halfstack.toml:/app/agent.toml:ro
+    environment:
+      BA_HOME: ${BA_HOME}
+      BA_SCRATCH_ROOT: ${BA_HOME}/scratches
+      BA_VAR_BASE_PATH: ${BA_HOME}/var
+      BA_IMAGE_COMMIT_PATH: ${BA_HOME}/var/commit
+      BA_PID_FILE: /dev/null
+      BA_ETCD_HOST: 127.0.0.1
+      BA_ETCD_PORT: ${BA_ETCD_PORT:-8120}
+    depends_on:
+      halfstack-db: { condition: service_healthy }
+      halfstack-redis: { condition: service_healthy }
+      halfstack-etcd: { condition: service_healthy }
+    profiles: ["services"]
+
+volumes:
+  half-db:
+  half-redis:
+  half-etcd:

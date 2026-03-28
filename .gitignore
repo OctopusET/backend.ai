@@ -164,3 +164,6 @@ backup.*.json
 /INSTALL-INFO
 .serena/
 .claude/worktrees/
+
+# Generated SSL certs
+configs/storage-proxy/ssl/*.pem
