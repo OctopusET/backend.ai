@@ -132,7 +132,11 @@ class BasePluginContext[P: AbstractPlugin]:
             blocklist=cls_blocklist | arg_blocklist,
         ):
             log.info("loading plugin (group:{}): {}", plugin_group, entrypoint.name)
-            yield entrypoint.name, entrypoint.load()
+            try:
+                yield entrypoint.name, entrypoint.load()
+            except (ImportError, AttributeError) as e:
+                log.warning("Skipping plugin {} ({})", entrypoint.name, e)
+                continue
 
     async def init(
         self,
