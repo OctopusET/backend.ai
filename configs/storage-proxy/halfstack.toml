@@ -1,8 +1,8 @@
 [etcd]
-namespace = "local"                         # env: BACKEND_NAMESPACE
-addr = { host = "127.0.0.1", port = 2379 }  # env: BACKEND_ETCD_ADDR (host:port)
-user = ""                                   # env: BACKEND_ETCD_USER
-password = ""				    # env: BACKEND_ETCD_PASSWORD
+namespace = "${BA_NAMESPACE:-local}"
+addr = { host = "${BA_ETCD_HOST:-127.0.0.1}", port = "${BA_ETCD_PORT:-2379}" }
+user = ""
+password = ""
 
 
 [storage-proxy]
@@ -100,7 +100,7 @@ format = "verbose"
 
 [volume.volume1]
 backend = "vfs"
-path = "vfolder/local/volume1"
+path = "${BA_STORAGE_ROOT:-vfolder/local}/volume1"
 
 [otel]
 enabled = false
