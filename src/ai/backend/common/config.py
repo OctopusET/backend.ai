@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import re
 import sys
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
@@ -26,6 +28,7 @@ __all__ = (
     "ConfigurationError",
     "check",
     "etcd_config_iv",
+    "expand_env_vars_recursive",
     "merge",
     "model_definition_iv",
     "override_key",
@@ -37,6 +40,9 @@ __all__ = (
     "redis_helper_default_config",
     "vfolder_config_iv",
 )
+
+_log = logging.getLogger(__name__)
+_ENV_PATTERN = re.compile(r"\$\{(\w+)(?::-([^}]*))?\}")
 
 
 class BaseConfigSchema(BaseModel):
@@ -389,6 +395,47 @@ def find_config_file(daemon_name: str) -> Path:
         })
 
 
+def _expand_env_value(value: str) -> str:
+    """Expand ``${VAR:-default}`` patterns in a string value.
+
+    Supports the ``BA_`` prefix convention for Backend.AI environment variables.
+    When a ``BA_``-prefixed variable is not found, a legacy ``BACKEND_``-prefixed
+    fallback is attempted with a deprecation warning.
+    """
+
+    def _replace(m: re.Match[str]) -> str:
+        var, default = m.group(1), m.group(2)
+        result = os.environ.get(var)
+        if result is None and var.startswith("BA_"):
+            legacy = "BACKEND_" + var[3:]
+            result = os.environ.get(legacy)
+            if result is not None:
+                _log.warning(
+                    "Environment variable %s is deprecated, use %s instead",
+                    legacy,
+                    var,
+                )
+        if result is not None:
+            return result
+        return default if default is not None else ""
+
+    return _ENV_PATTERN.sub(_replace, value)
+
+
+def expand_env_vars_recursive(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Recursively expand ``${VAR:-default}`` in all string values of a config dict."""
+    for key, value in cfg.items():
+        if isinstance(value, str):
+            cfg[key] = _expand_env_value(value)
+        elif isinstance(value, dict):
+            expand_env_vars_recursive(value)
+        elif isinstance(value, list):
+            cfg[key] = [
+                _expand_env_value(item) if isinstance(item, str) else item for item in value
+            ]
+    return cfg
+
+
 def read_from_file(toml_path: Path | str | None, daemon_name: str) -> tuple[dict[str, Any], Path]:
     config: dict[str, Any]
     discovered_path: Path
@@ -403,6 +450,7 @@ def read_from_file(toml_path: Path | str | None, daemon_name: str) -> tuple[dict
             "read_from_file()": f"Could not read config from: {discovered_path}",
         }) from e
     else:
+        config = expand_env_vars_recursive(config)
         return config, discovered_path
 
 
