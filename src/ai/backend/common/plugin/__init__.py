@@ -138,7 +138,16 @@ class BasePluginContext[P: AbstractPlugin]:
             allowlist=cls_allowlist | arg_allowlist if allowlist_enabled else None,
             blocklist=cls_blocklist | arg_blocklist,
         ):
-            plugin_cls = entrypoint.load()
+            try:
+                plugin_cls = entrypoint.load()
+            except (ImportError, AttributeError) as e:
+                log.warning(
+                    "skipping plugin (group:{}): {} (failed to load: {})",
+                    plugin_group,
+                    entrypoint.name,
+                    e,
+                )
+                continue
             if not (isinstance(plugin_cls, type) and issubclass(plugin_cls, AbstractPlugin)):
                 log.warning(
                     "skipping plugin (group:{}): {} (not a valid AbstractPlugin subclass, got {})",

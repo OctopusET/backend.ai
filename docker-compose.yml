@@ -147,6 +147,32 @@ services:
       halfstack-etcd: { condition: service_healthy }
     profiles: ["services"]
 
+  agent:
+    <<: *base
+    privileged: true
+    user: root
+    network_mode: host
+    ipc: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /sys:/sys:ro
+      - ${BA_HOME}:${BA_HOME}
+      - ./configs/agent/halfstack.toml:/app/agent.toml:ro
+    environment:
+      BA_HOME: ${BA_HOME}
+      BA_SCRATCH_ROOT: ${BA_HOME}/scratches
+      BA_VAR_BASE_PATH: ${BA_HOME}/var
+      BA_IMAGE_COMMIT_PATH: ${BA_HOME}/var/commit
+      BA_PID_FILE: /dev/null
+      BA_ETCD_HOST: 127.0.0.1
+      BA_ETCD_PORT: ${BA_ETCD_PORT:-8120}
+    command: ["python", "-m", "ai.backend.cli", "ag", "start-server", "--debug"]
+    depends_on:
+      halfstack-db: { condition: service_healthy }
+      halfstack-redis: { condition: service_healthy }
+      halfstack-etcd: { condition: service_healthy }
+    profiles: ["services"]
+
   webserver:
     <<: *base
     network_mode: host
@@ -218,33 +244,6 @@ services:
     command: ["python", "-m", "ai.backend.cli", "app-proxy-worker", "start-server", "--debug"]
     depends_on:
       halfstack-redis: { condition: service_healthy }
-    profiles: ["services"]
-
-  agent:
-    <<: *base
-    privileged: true
-    user: root
-    network_mode: host
-    ipc: host
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /dev/tenstorrent:/dev/tenstorrent
-      - /dev/hugepages-1G:/dev/hugepages-1G
-      - /sys:/sys:ro
-      - ${BA_HOME}:${BA_HOME}
-      - ./configs/agent/halfstack.toml:/app/agent.toml:ro
-    environment:
-      BA_HOME: ${BA_HOME}
-      BA_SCRATCH_ROOT: ${BA_HOME}/scratches
-      BA_VAR_BASE_PATH: ${BA_HOME}/var
-      BA_IMAGE_COMMIT_PATH: ${BA_HOME}/var/commit
-      BA_PID_FILE: /dev/null
-      BA_ETCD_HOST: 127.0.0.1
-      BA_ETCD_PORT: ${BA_ETCD_PORT:-8120}
-    depends_on:
-      halfstack-db: { condition: service_healthy }
-      halfstack-redis: { condition: service_healthy }
-      halfstack-etcd: { condition: service_healthy }
     profiles: ["services"]
 
 volumes:
