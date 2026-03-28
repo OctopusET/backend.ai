@@ -1,4 +1,5 @@
 import logging
+import os
 from abc import ABCMeta, abstractmethod
 from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
@@ -221,6 +222,29 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
             exclusive_slot_types=self.exclusive_slot_types,
         )
 
+    @staticmethod
+    def _build_mounts() -> list[dict[str, Any]]:
+        mounts: list[dict[str, Any]] = [
+            {
+                "BindOptions": {},
+                "ReadOnly": False,
+                "Source": "/dev/hugepages-1G",
+                "Target": "/dev/hugepages-1G",
+                "Type": "bind",
+            },
+        ]
+        ba_home = os.environ.get("BA_HOME") or os.environ.get("BACKEND_HOME")
+        cache_dir = Path(ba_home) / "cache" / "tt" if ba_home else None
+        if cache_dir and cache_dir.is_dir():
+            mounts.append({
+                "BindOptions": {},
+                "ReadOnly": False,
+                "Source": str(cache_dir),
+                "Target": "/home/container_app_user/cache",
+                "Type": "bind",
+            })
+        return mounts
+
     async def generate_docker_args(
         self,
         docker: aiodocker.docker.Docker,
@@ -263,22 +287,7 @@ class AbstractTTPlugin[TDevice: AbstractTTDevice](AbstractComputePlugin, metacla
                     }
                     for host_path, container_path in assigned_devices.items()
                 ],
-                "Mounts": [
-                    {
-                        "BindOptions": {},
-                        "ReadOnly": False,
-                        "Source": "/dev/hugepages-1G",
-                        "Target": "/dev/hugepages-1G",
-                        "Type": "bind",
-                    },
-                    {
-                        "BindOptions": {},
-                        "ReadOnly": False,
-                        "Source": "/opt/backendai/cache/tt",
-                        "Target": "/home/container_app_user/cache",
-                        "Type": "bind",
-                    },
-                ],
+                "Mounts": self._build_mounts(),
             },
         }
 
