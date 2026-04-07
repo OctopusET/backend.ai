@@ -66,18 +66,19 @@ done
 rm -rf "$WORK_DIR"
 
 echo "=== Creating AppProxy database ==="
-python3 -c "
-import asyncio, asyncpg
+python3 - "$DB_PASSWORD" "$DB_ADDR" <<'PYEOF'
+import asyncio, asyncpg, sys
 
 async def main():
-    conn = await asyncpg.connect('postgresql://postgres:${DB_PASSWORD}@${DB_ADDR}/backend')
+    db_password, db_addr = sys.argv[1], sys.argv[2]
+    conn = await asyncpg.connect(f'postgresql://postgres:{db_password}@{db_addr}/backend')
     await conn.execute('COMMIT')  # exit implicit transaction
     try:
         await conn.execute('CREATE DATABASE appproxy')
     except asyncpg.exceptions.DuplicateDatabaseError:
         pass
     try:
-        await conn.execute(\"CREATE USER appproxy WITH PASSWORD '${DB_PASSWORD}'\")
+        await conn.execute("CREATE USER appproxy WITH PASSWORD $1", db_password)
     except asyncpg.exceptions.DuplicateObjectError:
         pass
     await conn.execute('GRANT ALL PRIVILEGES ON DATABASE appproxy TO appproxy')
@@ -86,7 +87,7 @@ async def main():
     print('  AppProxy database ready')
 
 asyncio.run(main())
-"
+PYEOF
 
 echo "=== Seeding etcd ==="
 etcd_put() { python -m ai.backend.cli mgr -f "$MANAGER_CONF" etcd put "$1" "$2"; }
@@ -106,14 +107,14 @@ etcd_put volumes/proxies/${STORAGE_PROXY_ID}/secret "$STORAGE_PROXY_SECRET"
 etcd_put volumes/proxies/${STORAGE_PROXY_ID}/ssl_verify "false"
 
 echo "=== Setting up DB resources ==="
-python3 -c "
-import asyncio, json, uuid
+python3 - "$DB_PASSWORD" "$DB_ADDR" "$APPPROXY_SECRET" "$STORAGE_PROXY_ID" "$WSPROXY_ADDR" <<'PYEOF'
+import asyncio, json, uuid, sys
 import asyncpg
 
-DB_DSN = 'postgresql://postgres:${DB_PASSWORD}@${DB_ADDR}/backend'
-APPPROXY_SECRET = '${APPPROXY_SECRET}'
-STORAGE_PROXY_ID = '${STORAGE_PROXY_ID}'
-WSPROXY_ADDR = '${WSPROXY_ADDR}'
+DB_DSN = f'postgresql://postgres:{sys.argv[1]}@{sys.argv[2]}/backend'
+APPPROXY_SECRET = sys.argv[3]
+STORAGE_PROXY_ID = sys.argv[4]
+WSPROXY_ADDR = sys.argv[5]
 
 async def main():
     conn = await asyncpg.connect(DB_DSN)
@@ -250,6 +251,6 @@ async def main():
     print('  All resources registered')
 
 asyncio.run(main())
-"
+PYEOF
 
 echo "=== Init complete ==="

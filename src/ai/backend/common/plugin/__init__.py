@@ -133,10 +133,11 @@ class BasePluginContext[P: AbstractPlugin]:
         ):
             log.info("loading plugin (group:{}): {}", plugin_group, entrypoint.name)
             try:
-                yield entrypoint.name, entrypoint.load()
+                plugin_cls = entrypoint.load()
             except (ImportError, AttributeError) as e:
                 log.warning("Skipping plugin {} ({})", entrypoint.name, e)
                 continue
+            yield entrypoint.name, plugin_cls
 
     async def init(
         self,

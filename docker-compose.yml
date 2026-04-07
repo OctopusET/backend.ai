@@ -131,9 +131,9 @@ services:
     <<: *base
     user: root
     network_mode: host
+    restart: unless-stopped
     volumes:
       - ./configs/manager/halfstack.toml:/app/manager.toml:ro
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       BA_DB_PASSWORD: ${BA_DB_PASSWORD:-develove}
       BA_DB_HOST: 127.0.0.1
@@ -152,6 +152,7 @@ services:
     privileged: true
     user: root
     network_mode: host
+    restart: unless-stopped
     ipc: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -176,6 +177,7 @@ services:
   webserver:
     <<: *base
     network_mode: host
+    restart: unless-stopped
     volumes:
       - ./configs/webserver/halfstack-docker.conf:/app/webserver.conf:ro
     command: ["python", "-m", "ai.backend.cli", "web", "start-server", "--debug"]
@@ -188,6 +190,7 @@ services:
   graphql-gateway:
     image: ghcr.io/graphql-hive/gateway:2.1.12
     network_mode: host
+    restart: unless-stopped
     command: ["supergraph"]
     environment:
       HOST: 0.0.0.0
@@ -195,12 +198,15 @@ services:
     volumes:
       - ./configs/graphql/supergraph.graphql:/gateway/supergraph.graphql:ro
       - ./configs/graphql/gateway-docker.config.ts:/gateway/gateway.config.ts:ro
+    depends_on:
+      manager: { condition: service_started }
     profiles: ["services"]
 
   storage-proxy:
     <<: *base
     user: root
     network_mode: host
+    restart: unless-stopped
     volumes:
       - ./configs/storage-proxy/halfstack.toml:/app/storage-proxy.toml:ro
       - ./configs/storage-proxy/ssl:/app/configs/storage-proxy/ssl:ro
@@ -218,6 +224,7 @@ services:
     <<: *base
     user: root
     network_mode: host
+    restart: unless-stopped
     volumes:
       - ./configs/app-proxy-coordinator/halfstack.toml:/app/app-proxy-coordinator.toml:ro
     environment:
@@ -236,6 +243,7 @@ services:
     <<: *base
     user: root
     network_mode: host
+    restart: unless-stopped
     volumes:
       - ./configs/app-proxy-worker/halfstack.toml:/app/app-proxy-worker.toml:ro
     environment:
