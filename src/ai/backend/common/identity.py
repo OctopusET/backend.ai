@@ -34,6 +34,7 @@ __all__ = (
     "get_instance_type",
     "get_root_fs_type",
     "get_wsl_version",
+    "resolve_local_ip",
 )
 
 log = logging.getLogger(__spec__.name)
