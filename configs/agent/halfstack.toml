@@ -1,6 +1,6 @@
 [etcd]
-namespace = "local"
-addr = { host = "127.0.0.1", port = 8120 }
+namespace = "${BA_NAMESPACE:-local}"
+addr = { host = "${BA_ETCD_HOST:-127.0.0.1}", port = "${BA_ETCD_PORT:-8120}" }
 user = ""
 password = ""
 
@@ -16,25 +16,26 @@ ssl-enabled = false
 agent-sock-port = 6007
 # id = "i-something-special"
 scaling-group = "default"
-pid-file = "./agent.pid"
+pid-file = "${BA_PID_FILE:-./agent.pid}"
 event-loop = "uvloop"
 # ipc-base-path = "/tmp/backend.ai/ipc"
-var-base-path = "./var/lib/backend.ai"
+var-base-path = "${BA_VAR_BASE_PATH:-./var/lib/backend.ai}"
 # allow-compute-plugins = []
 # block-compute-plugins = []
-image-commit-path = "./tmp/backend.ai/commit/"
+image-commit-path = "${BA_IMAGE_COMMIT_PATH:-./tmp/backend.ai/commit/}"
 mount-path = "./vfroot/local"
 cohabiting-storage-proxy = true
+metadata-server-port = 40228
 
 
 [container]
 port-range = [30000, 31000]
 kernel-uid = -1
 kernel-gid = -1
-bind-host = "127.0.0.1"
+bind-host = "${BA_BIND_HOST_OVERRIDE:-127.0.0.1}"
 sandbox-type = "docker"
 scratch-type = "hostdir"
-scratch-root = "./scratches"
+scratch-root = "${BA_SCRATCH_ROOT:-./scratches}"
 scratch-size = "1G"
 
 

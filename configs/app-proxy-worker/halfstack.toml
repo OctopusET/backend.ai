@@ -1,5 +1,5 @@
 [redis]
-addr = { host = "127.0.0.1", port = 8110 }
+addr = { host = "${BA_REDIS_HOST:-127.0.0.1}", port = "${BA_REDIS_PORT:-8110}" }
 
 [proxy_worker]
 coordinator_endpoint = "http://127.0.0.1:10200"
@@ -13,13 +13,12 @@ protocol = "http"
 accepted_traffics = ["inference", "interactive"]
 api_bind_addr = { host = "0.0.0.0", port = 10201 }
 # Change `host` to the public/external address for user access. Change `port` only if port mapping is in use.
-api_advertised_addr = { host = "127.0.0.1", port = 10201 }
+api_advertised_addr = { host = "${BA_ADVERTISED_HOST:-127.0.0.1}", port = 10201 }
 
 [proxy_worker.port_proxy]
 bind_host = "0.0.0.0"
-# Change to the actual host for user access
-advertised_host = "127.0.0.1"
-bind_port_range = [10205, 10300]
+advertised_host = "${BA_ADVERTISED_HOST:-0.0.0.0}"
+bind_port_range = [10300, 10400]
 
 [secrets]
 api_secret = "some_api_secret"
