@@ -1,0 +1,69 @@
+{{- if .Values.gateway.enabled }}
+{{- if not .Values.gateway.existingConfigMap }}
+{{- fail "gateway.enabled=true requires gateway.existingConfigMap (keys: supergraph.graphql, gateway.config.ts)" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-gateway
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "backend-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "backend-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: {{ .Values.gateway.image | quote }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args: ["supergraph"]
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.gateway.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.port }}
+          volumeMounts:
+            - name: supergraph
+              mountPath: /gateway/supergraph.graphql
+              subPath: supergraph.graphql
+              readOnly: true
+            - name: supergraph
+              mountPath: /gateway/gateway.config.ts
+              subPath: gateway.config.ts
+              readOnly: true
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+      volumes:
+        - name: supergraph
+          configMap:
+            name: {{ .Values.gateway.existingConfigMap }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-gateway
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "backend-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: http
+      port: {{ .Values.gateway.port }}
+      targetPort: http
+{{- end }}

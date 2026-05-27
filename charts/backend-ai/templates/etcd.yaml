@@ -1,0 +1,85 @@
+{{- if .Values.etcd.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-etcd
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: etcd
+spec:
+  clusterIP: None
+  ports:
+    - name: client
+      port: 2379
+      targetPort: client
+    - name: peer
+      port: 2380
+      targetPort: peer
+  selector:
+    {{- include "backend-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: etcd
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-etcd
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: etcd
+spec:
+  serviceName: {{ include "backend-ai.fullname" . }}-etcd
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "backend-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: etcd
+  template:
+    metadata:
+      labels:
+        {{- include "backend-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: etcd
+    spec:
+      containers:
+        - name: etcd
+          image: {{ .Values.etcd.image | quote }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          command:
+            - /usr/local/bin/etcd
+            - --name=backendai-etcd
+            - --data-dir=/etcd-data
+            - --listen-client-urls=http://0.0.0.0:2379
+            - --advertise-client-urls=http://0.0.0.0:2379
+            - --listen-peer-urls=http://0.0.0.0:2380
+            - --initial-advertise-peer-urls=http://0.0.0.0:2380
+            - --initial-cluster=backendai-etcd=http://0.0.0.0:2380
+            - --initial-cluster-token=backendai-etcd-token
+            - --initial-cluster-state=new
+            - --enable-v2=true
+            - --auto-compaction-retention=1
+          ports:
+            - name: client
+              containerPort: 2379
+            - name: peer
+              containerPort: 2380
+          volumeMounts:
+            - name: data
+              mountPath: /etcd-data
+          readinessProbe:
+            exec:
+              command: ["etcdctl", "endpoint", "health"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.etcd.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.etcd.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.etcd.storage | quote }}
+{{- end }}

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-env
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+data:
+  BA_MODE: {{ .Values.config.mode | quote }}
+  BA_ADVERTISED_HOST: {{ .Values.config.advertisedHost | quote }}
+  BA_HOME: {{ .Values.config.home | quote }}
+  BA_NAMESPACE: {{ .Values.config.namespace | quote }}
+  BA_DB_HOST: {{ include "backend-ai.dbHost" . | quote }}
+  BA_DB_PORT: {{ .Values.config.db.port | quote }}
+  BA_DB_NAME: {{ .Values.config.db.name | quote }}
+  BA_REDIS_HOST: {{ include "backend-ai.redisHost" . | quote }}
+  BA_REDIS_PORT: {{ .Values.config.redis.port | quote }}
+  BA_ETCD_HOST: {{ include "backend-ai.etcdHost" . | quote }}
+  BA_ETCD_PORT: {{ .Values.config.etcd.port | quote }}
+  # Agent paths (harmless for other services)
+  BA_SCRATCH_ROOT: {{ printf "%s/scratches" .Values.config.home | quote }}
+  BA_VAR_BASE_PATH: {{ printf "%s/var" .Values.config.home | quote }}
+  BA_IMAGE_COMMIT_PATH: {{ printf "%s/var/commit" .Values.config.home | quote }}

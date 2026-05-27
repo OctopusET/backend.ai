@@ -1,0 +1,41 @@
+Backend.AI ({{ .Chart.AppVersion }}) has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Control plane (Deployments):
+{{- range $name, $svc := .Values.controlPlane }}
+{{- if $svc.enabled }}
+  - {{ $name }}
+{{- end }}
+{{- end }}
+{{- if .Values.gateway.enabled }}
+  - gateway
+{{- end }}
+
+Compute plane:
+{{- if .Values.agent.enabled }}
+  - agent DaemonSet on nodes matching: {{ toYaml .Values.agent.nodeSelector | nindent 6 }}
+    (label your GPU nodes, e.g. `kubectl label node <node> backendai.io/gpu=true`)
+{{- else }}
+  - agent: disabled
+{{- end }}
+
+Bundled infrastructure:
+  postgresql={{ .Values.postgresql.enabled }}  redis={{ .Values.redis.enabled }}  etcd={{ .Values.etcd.enabled }}
+
+Next steps:
+  1. Watch bootstrap:   kubectl -n {{ .Release.Namespace }} logs job/{{ include "backend-ai.fullname" . }}-init -f
+  2. Check pods:        kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  3. Reach the webserver:
+       kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "backend-ai.fullname" . }}-webserver 8090:8090
+
+{{- if .Values.gateway.enabled }}
+
+GraphQL gateway is enabled and mounts ConfigMap "{{ .Values.gateway.existingConfigMap }}".
+Ensure its supergraph routing URLs point at svc/{{ include "backend-ai.fullname" . }}-manager:8081.
+{{- end }}
+{{- if eq .Values.config.mode "prod" }}
+{{- if not .Values.config.advertisedHost }}
+
+WARNING: config.mode=prod but config.advertisedHost is empty. appproxy needs a
+reachable external address — set --set config.advertisedHost=<host>.
+{{- end }}
+{{- end }}

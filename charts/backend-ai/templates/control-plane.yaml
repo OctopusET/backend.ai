@@ -1,0 +1,79 @@
+{{- $root := . -}}
+{{- range $name, $svc := .Values.controlPlane }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backend-ai.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "backend-ai.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $svc.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "backend-ai.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "backend-ai.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+      annotations:
+        # roll pods when config changes
+        checksum/config: {{ $root.Files.Get (printf "files/%s" $svc.configFile) | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "backend-ai.serviceAccountName" $root }}
+      {{- with $root.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $root.Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "backend-ai.image" $root | quote }}
+          imagePullPolicy: {{ $root.Values.global.image.pullPolicy }}
+          command: {{ toJson $svc.command }}
+          envFrom:
+            {{- include "backend-ai.envFrom" $root | nindent 12 }}
+          ports:
+            {{- range $pname, $pport := $svc.ports }}
+            - name: {{ $pname }}
+              containerPort: {{ $pport }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/{{ $svc.configFile }}
+              subPath: {{ $svc.configFile }}
+              readOnly: true
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "backend-ai.fullname" $root }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "backend-ai.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "backend-ai.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "backend-ai.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+  ports:
+    {{- range $pname, $pport := $svc.ports }}
+    - name: {{ $pname }}
+      port: {{ $pport }}
+      targetPort: {{ $pname }}
+    {{- end }}
+{{- end }}
+{{- end }}

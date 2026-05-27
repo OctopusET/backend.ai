@@ -1,0 +1,75 @@
+{{- if .Values.init.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-init
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: init
+  annotations:
+    # Run after infra is up, before the services. delete-policy keeps the last
+    # failed Job around for debugging.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.init.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "backend-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: init
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "backend-ai.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Block until PostgreSQL and etcd accept connections.
+        - name: wait-for-infra
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ include "backend-ai.dbHost" . }} {{ .Values.config.db.port }}; do
+                echo "waiting for postgresql..."; sleep 2; done
+              until nc -z {{ include "backend-ai.etcdHost" . }} {{ .Values.config.etcd.port }}; do
+                echo "waiting for etcd..."; sleep 2; done
+      containers:
+        - name: init
+          image: {{ include "backend-ai.image" . | quote }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          # Mirrors the docker-compose `init` service (scripts/init-manager.sh):
+          # alembic migration, etcd config population, image metadata, fixtures.
+          command: ["/bin/bash", "/app/scripts/init-manager.sh"]
+          envFrom:
+            {{- include "backend-ai.envFrom" . | nindent 12 }}
+          env:
+            - name: MANAGER_CONF
+              value: /app/manager.toml
+            - name: ADMIN_EMAIL
+              value: {{ .Values.config.adminEmail | quote }}
+            - name: DB_ADDR
+              value: {{ printf "%s:%v" (include "backend-ai.dbHost" .) .Values.config.db.port }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-ai.secretName" . }}
+                  key: BA_DB_PASSWORD
+            - name: BACKEND_ALEMBIC_DATABASE_URL
+              value: postgresql+asyncpg://postgres:$(DB_PASSWORD)@{{ include "backend-ai.dbHost" . }}:{{ .Values.config.db.port }}/{{ .Values.config.db.name }}
+            - name: LOAD_FIXTURES
+              value: {{ .Values.init.loadFixtures | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/manager.toml
+              subPath: manager.toml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "backend-ai.fullname" . }}-config
+{{- end }}

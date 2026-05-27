@@ -1,0 +1,173 @@
+# Default values for backend-ai.
+# All configuration flows through BA_* environment variables, the same system
+# used by the docker-compose (Tier 1) deployment. The bundled TOML configs in
+# files/ reference ${BA_*}, expanded at load time inside the container.
+
+global:
+  image:
+    repository: ghcr.io/lablup/backend-ai
+    # tag defaults to .Chart.appVersion when empty
+    tag: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # Cluster-internal DNS suffix; used to build default service hostnames.
+  clusterDomain: cluster.local
+
+# ---------------------------------------------------------------------------
+# BA_* configuration (rendered into a ConfigMap and injected as env)
+# ---------------------------------------------------------------------------
+config:
+  mode: prod                       # BA_MODE: dev | prod
+  # BA_ADVERTISED_HOST: external address clients/agents use to reach appproxy.
+  # REQUIRED in prod mode. Often the ingress/LB hostname or a node IP.
+  advertisedHost: ""
+  home: /opt/backendai             # BA_HOME (data root inside containers)
+  namespace: backendai             # BA_NAMESPACE (etcd key namespace)
+  adminEmail: admin@example.com    # bootstrap superadmin email
+
+  db:
+    # host/port default to the bundled postgres service when empty
+    host: ""
+    port: 5432
+    name: backend
+  redis:
+    host: ""
+    port: 6379
+  etcd:
+    host: ""
+    port: 2379
+
+# ---------------------------------------------------------------------------
+# Secrets. By default a Secret is created from these values. To supply your
+# own Secret instead, set existingSecret to its name (keys: db-password,
+# admin-password).
+# ---------------------------------------------------------------------------
+secrets:
+  existingSecret: ""
+  dbPassword: develove
+  adminPassword: changeme
+
+# ---------------------------------------------------------------------------
+# Bundled infrastructure. Disable any of these to use an external/managed
+# instance and set config.<svc>.host/port accordingly.
+# ---------------------------------------------------------------------------
+postgresql:
+  enabled: true
+  image: postgres:16.3-alpine
+  storage: 10Gi
+  storageClass: ""
+  resources: {}
+redis:
+  enabled: true
+  image: redis:7.2.11-alpine
+  storage: 8Gi
+  storageClass: ""
+  resources: {}
+etcd:
+  enabled: true
+  image: quay.io/coreos/etcd:v3.5.14
+  storage: 4Gi
+  storageClass: ""
+  resources: {}
+
+# ---------------------------------------------------------------------------
+# One-shot bootstrap (Helm pre-install/pre-upgrade hook Job): DB schema
+# migration, etcd config population, image metadata, and example fixtures.
+# ---------------------------------------------------------------------------
+init:
+  enabled: true
+  loadFixtures: true
+  backoffLimit: 3
+
+# ---------------------------------------------------------------------------
+# Control-plane services. Each becomes a Deployment + ClusterIP Service.
+# `command` is the Backend.AI CLI entrypoint; `configFile` is mounted from the
+# chart's ConfigMap at /app/<configFile>.
+# ---------------------------------------------------------------------------
+controlPlane:
+  manager:
+    enabled: true
+    replicas: 1
+    command: ["python", "-m", "ai.backend.cli", "mgr", "start-server"]
+    configFile: manager.toml
+    ports:
+      service: 8081
+      internal: 18080
+    resources: {}
+  webserver:
+    enabled: true
+    replicas: 1
+    command: ["python", "-m", "ai.backend.cli", "web", "start-server"]
+    configFile: webserver.conf
+    ports:
+      service: 8090
+    resources: {}
+  storage-proxy:
+    enabled: true
+    replicas: 1
+    command: ["python", "-m", "ai.backend.cli", "storage", "start-server"]
+    configFile: storage-proxy.toml
+    ports:
+      client: 6021
+      manager: 6022
+      internal: 16023
+    resources: {}
+  appproxy-coordinator:
+    enabled: true
+    replicas: 1
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-coordinator", "start-server"]
+    configFile: app-proxy-coordinator.toml
+    ports:
+      service: 10200
+    resources: {}
+  appproxy-worker:
+    enabled: true
+    replicas: 1
+    command: ["python", "-m", "ai.backend.cli", "app-proxy-worker", "start-server"]
+    configFile: app-proxy-worker.toml
+    ports:
+      api: 10201
+    resources: {}
+
+# ---------------------------------------------------------------------------
+# GraphQL federation gateway (Hive Gateway). Needs a composed supergraph and a
+# gateway config whose subgraph URLs point at the manager Service. Provide them
+# via an existing ConfigMap with keys: supergraph.graphql, gateway.config.ts.
+#   kubectl create configmap <release>-gateway \
+#     --from-file=supergraph.graphql=docs/manager/graphql-reference/supergraph.graphql \
+#     --from-file=gateway.config.ts=configs/graphql/gateway-docker.config.ts
+# ---------------------------------------------------------------------------
+gateway:
+  enabled: false
+  image: ghcr.io/graphql-hive/gateway:2.1.12
+  port: 4000
+  # ConfigMap providing supergraph.graphql + gateway.config.ts (see above).
+  existingConfigMap: ""
+  resources: {}
+
+# ---------------------------------------------------------------------------
+# Compute-plane agent. Runs as a privileged DaemonSet on GPU nodes; creates
+# compute containers via the host Docker socket (sibling containers).
+# ---------------------------------------------------------------------------
+agent:
+  enabled: true
+  command: ["python", "-m", "ai.backend.cli", "ag", "start-server"]
+  configFile: agent.toml
+  # Schedule only on labelled GPU nodes.
+  nodeSelector:
+    backendai.io/gpu: "true"
+  tolerations: []
+  hostNetwork: true
+  hostIPC: true
+  dockerSocket: /var/run/docker.sock
+  # hostPath for BA_HOME (scratch, var, image-commit) shared with compute containers
+  hostHome: /opt/backendai
+  resources: {}
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext: {}
+commonLabels: {}
+commonAnnotations: {}

@@ -1,0 +1,81 @@
+{{- if .Values.agent.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-agent
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      {{- include "backend-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        {{- include "backend-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+      annotations:
+        checksum/config: {{ .Files.Get "files/agent.toml" | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "backend-ai.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      hostNetwork: {{ .Values.agent.hostNetwork }}
+      hostIPC: {{ .Values.agent.hostIPC }}
+      {{- if .Values.agent.hostNetwork }}
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent
+          image: {{ include "backend-ai.image" . | quote }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          command: {{ toJson .Values.agent.command }}
+          securityContext:
+            privileged: true
+          envFrom:
+            {{- include "backend-ai.envFrom" . | nindent 12 }}
+          env:
+            - name: BA_PID_FILE
+              value: /dev/null
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            - name: home
+              mountPath: {{ .Values.config.home }}
+            - name: config
+              mountPath: /app/{{ .Values.agent.configFile }}
+              subPath: {{ .Values.agent.configFile }}
+              readOnly: true
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: {{ .Values.agent.dockerSocket }}
+            type: Socket
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: home
+          hostPath:
+            path: {{ .Values.agent.hostHome }}
+            type: DirectoryOrCreate
+        - name: config
+          configMap:
+            name: {{ include "backend-ai.fullname" . }}-config
+{{- end }}

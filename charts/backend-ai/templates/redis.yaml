@@ -1,0 +1,68 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-redis
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  clusterIP: None
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    {{- include "backend-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "backend-ai.fullname" . }}-redis
+  labels:
+    {{- include "backend-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: {{ include "backend-ai.fullname" . }}-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "backend-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "backend-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image | quote }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.redis.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.redis.storage | quote }}
+{{- end }}

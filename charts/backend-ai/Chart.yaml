@@ -1,0 +1,21 @@
+apiVersion: v2
+name: backend-ai
+description: |
+  Backend.AI control plane + agent for Kubernetes (Tier 2, production).
+  Control-plane services run as Deployments; the agent runs as a privileged
+  DaemonSet on GPU nodes and creates compute containers via the Docker API
+  (sibling containers, not k8s pods). Bundled PostgreSQL/Redis/etcd can be
+  disabled to use external/managed infrastructure.
+type: application
+version: 0.1.0
+# Container image tag default (overridable via global.image.tag).
+appVersion: "25.14.0"
+keywords:
+  - backend.ai
+  - gpu
+  - mlops
+home: https://www.backend.ai
+sources:
+  - https://github.com/lablup/backend.ai
+maintainers:
+  - name: Backend.AI Contributors
